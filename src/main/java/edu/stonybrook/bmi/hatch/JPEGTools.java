@@ -16,11 +16,8 @@ public class JPEGTools {
     static byte D9 = (byte) 0xd9;
     
     public static void FindEOI(byte[] buf) {
-        System.out.println("============================================================");
         for (int i=0; i<buf.length; i++) {
-            //System.out.println(i+" "+Integer.toHexString(0xFF&buf[i]));
             if (Byte.compare(buf[i],FF)==0) {
-                //System.out.println("FF DETECTED");
                 if (Byte.compare(buf[i+1],D9)==0) {
                     System.out.println("EOI : "+i+" "+buf.length);
                 }
@@ -59,7 +56,6 @@ public class JPEGTools {
             }
             first = second;
             second = ets.readByte();
-            //System.out.println(ets.getFilePointer());
         }
         return -1;
     }
