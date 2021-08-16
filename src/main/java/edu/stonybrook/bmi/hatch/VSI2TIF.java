@@ -31,18 +31,28 @@ import ome.xml.model.primitives.PositiveInteger;
  */
 public class VSI2TIF {
     private CellSensReader reader;
-    private final String inputFile;
-    private final String outputFile;
+    private String inputFile;
+    private String outputFile;
     private int tileSizeX;
     private int tileSizeY;
     private int maximage;
-    //private BigTiff nn;
     private Pyramid pyramid;
     private OMETiffWriter writer;
+    private boolean verbose = false;
+    private long start;
     
-    public VSI2TIF (String in, String out) {
-        inputFile = in;
-        outputFile = out;
+    public VSI2TIF() {
+        start = System.nanoTime();
+    }
+    
+    public void SetSrcDest(String src, String dest) {
+        inputFile = src;
+        outputFile = dest;
+    }
+    
+    public void Lapse() {
+        long now = (System.nanoTime()-start)/1000000000L;
+        System.out.println(now+" seconds");
     }
     
     public int MaxImage(IFormatReader reader) {
@@ -59,7 +69,7 @@ public class VSI2TIF {
         return maxseries;
     }
     
-    private void SetupWriter(String file) {
+    private void SetupWriter() {
         writer = new OMETiffWriter();
         ServiceFactory factory;
         try {
@@ -91,7 +101,7 @@ public class VSI2TIF {
             }
             writer.setMetadataRetrieve(meta);
             writer.setBigTiff(true);
-            writer.setId(file);
+            writer.setId(outputFile);
             writer.setCompression("JPEG");
             writer.setWriteSequentially(false);
             writer.setInterleaved(true);
@@ -108,24 +118,39 @@ public class VSI2TIF {
         }
     }
     
-    private void initialize() throws DependencyException, FormatException, IOException, ServiceException {
-        ServiceFactory factory = new ServiceFactory();
-        OMEXMLService service = factory.getInstance(OMEXMLService.class);
-        IMetadata omexml = service.createOMEXMLMetadata();
-        reader = new CellSensReader();
-        reader.setMetadataStore(omexml);
-        reader.setId(inputFile);
-        maximage = MaxImage(reader);
-        reader.setSeries(maximage);
-        tileSizeX = reader.getOptimalTileWidth();
-        tileSizeY = reader.getOptimalTileHeight();
-        System.out.println("ORIGINAL IMAGE : "+reader.getSizeX()+","+reader.getSizeY()+"  "+tileSizeX+"x"+tileSizeY+"  interleaved : "+reader.isInterleaved()+" little endian : "+reader.isLittleEndian());
-        String fname = "\\vsi\\2hatch.tif";
-        File dest = new File(fname);
-        if (dest.exists()) {
-            dest.delete();
+    private void initialize() {
+        ServiceFactory factory;
+        try {
+            factory = new ServiceFactory();
+            OMEXMLService service = factory.getInstance(OMEXMLService.class);
+            IMetadata omexml = service.createOMEXMLMetadata();
+            reader = new CellSensReader();
+            reader.setMetadataStore(omexml);
+            reader.setId(inputFile);
+            maximage = MaxImage(reader);
+            reader.setSeries(maximage);
+            tileSizeX = reader.getOptimalTileWidth();
+            tileSizeY = reader.getOptimalTileHeight();
+            if (verbose) {
+                System.out.println("SRC Image:");
+                System.out.println("Image Size : "+reader.getSizeX()+"x"+reader.getSizeY());
+                System.out.println("Tile size  : "+tileSizeX+"x"+tileSizeY);
+            }
+            File dest = new File(outputFile);
+            if (dest.exists()) {
+                dest.delete();
+            }
+            SetupWriter();
+        } catch (DependencyException ex) {
+            Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (ServiceException ex) {
+            Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (FormatException ex) {
+            Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (IOException ex) {
+            Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
         }
-        SetupWriter(fname);
+
     }
     
     public int effSize(int tileX, int width) {
@@ -134,10 +159,8 @@ public class VSI2TIF {
         
     public void readWriteTiles() throws FormatException, IOException {
         reader.setSeries(maximage);
-        System.out.println("Interleaved : "+reader.isInterleaved());
         int width = reader.getSizeX();
         int height = reader.getSizeY();
-        System.out.println(width+" "+height);
         int nXTiles = width / tileSizeX;
         int nYTiles = height / tileSizeY;
         if (nXTiles * tileSizeX != width) nXTiles++;
@@ -165,14 +188,11 @@ public class VSI2TIF {
         
         pyramid.Lump();
         for (int s=1;s<6;s++) {
-            System.out.println("PYRAMID SCALE : "+s+" "+pyramid.gettilesX()+" "+pyramid.gettilesY());
             writer.setSeries(0);
             writer.setResolution(s);
             for (int y=0; y<pyramid.gettilesY(); y++) {
                 for (int x=0; x<pyramid.gettilesX(); x++) {
-                    //System.out.println("P : "+x+","+y);
                     byte[] b = pyramid.GetImageBytes(x, y);
-                    //pyramid.Dump2File(b, x, y);
                     IFD ifd = new IFD();
                     int tw = pyramid.getBufferedImage(x,y).getWidth();
                     int th = pyramid.getBufferedImage(x,y).getHeight();
@@ -180,15 +200,12 @@ public class VSI2TIF {
                     ifd.put(IFD.TILE_WIDTH, tw);
                     ifd.put(IFD.TILE_LENGTH, th);
                     ifd.putIFDValue(IFD.RESOLUTION_UNIT, 3);
-                    ifd.putIFDValue(IFD.X_RESOLUTION, 512);
-                    ifd.putIFDValue(IFD.Y_RESOLUTION, 512);
-                    //ifd.putIFDValue(IFD.ORIENTATION, 1);
+                    ifd.putIFDValue(IFD.X_RESOLUTION, tileSizeX);
+                    ifd.putIFDValue(IFD.Y_RESOLUTION, tileSizeY);
                     ifd.put(777, b);
                     BufferedImage bi = pyramid.getBufferedImage(x, y);
                     byte[] raw = ((DataBufferByte)bi.getRaster().getDataBuffer()).getData();
-                    //System.out.println("BBBBBBB : "+x+","+y+" : "+pyramid.getBufferedImage(x,y).getWidth()+"x"+pyramid.getBufferedImage(x,y).getHeight());
-                    writer.saveBytes(0, raw, ifd, x*512, y*512, tw, th);
-                    //pyramid.Dump2File(b, x, y);
+                    writer.saveBytes(0, raw, ifd, x*tileSizeX, y*tileSizeY, tw, th);
                 }
             }
             pyramid.Shrink(0.5f);
@@ -196,18 +213,52 @@ public class VSI2TIF {
         }
     }
     
-    public static void main(String[] args) throws DependencyException, FormatException, IOException, ServiceException {
+    public void SetVerbose(boolean x) {
+        verbose = x;
+    }
+    
+    public void DisplayHelp() {
+        System.out.println("hatch - version 1.0.0");
+        System.out.println("usage: hatch <src> <dest>");
+        System.out.println("-v : verbose");
+    }
+    
+    public void Execute(String src, String dest) {
+        if (verbose) {
+            System.out.println("initializing...");
+        }
+        SetSrcDest(src,dest);
+        initialize();
+        if (verbose) {
+            Lapse();
+            System.out.println("transferring image data...");
+        }
+        try {
+            readWriteTiles();
+            Lapse();
+        } catch(IOException | FormatException e) {
+            System.err.println(e.toString());
+        }
+    }
+    
+    public static void main(String[] args) {
         String[] args2 = {"\\vsi\\001738-000598_01_01_2019071702.vsi","\\vsi\\turbo.tif"};
         args = args2;
         loci.common.DebugTools.setRootLevel("WARN");
-        VSI2TIF v2t = new VSI2TIF(args[0], args[1]);
-        v2t.initialize();
-        try {
-            v2t.readWriteTiles();
-        } catch(IOException | FormatException e) {
-            System.err.println(e.toString());
-        } //finally {
-            //v2t.cleanup();
-        //}
+        VSI2TIF v2t = new VSI2TIF();
+        if ((args.length<2)||args.length>3) {
+            v2t.DisplayHelp();
+        } else {
+            if (args.length==3) {
+                if (args[0].equals("-v")) {
+                    v2t.SetVerbose(true);
+                    v2t.Execute(args[1],args[2]);
+                } else {
+                    v2t.DisplayHelp();
+                }
+            } else {
+                v2t.Execute(args[0],args[1]);
+            }
+        }
     }
 }
