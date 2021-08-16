@@ -210,8 +210,6 @@ public class VSI2TIF {
                     int tw = pyramid.getBufferedImage(x,y).getWidth();
                     int th = pyramid.getBufferedImage(x,y).getHeight();
                     ifd.putIFDValue(IFD.NEW_SUBFILE_TYPE, 1L);
-                    ifd.put(IFD.TILE_WIDTH, tw);
-                    ifd.put(IFD.TILE_LENGTH, th);
                     ifd.putIFDValue(IFD.RESOLUTION_UNIT, 3);
                     ifd.putIFDValue(IFD.X_RESOLUTION, tileSizeX);
                     ifd.putIFDValue(IFD.Y_RESOLUTION, tileSizeY);
