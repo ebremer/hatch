@@ -16,9 +16,11 @@ import loci.formats.CoreMetadata;
 import loci.formats.FormatException;
 import loci.formats.IFormatReader;
 import loci.formats.meta.IMetadata;
+import loci.formats.meta.MetadataRetrieve;
 import loci.formats.ome.OMEPyramidStore;
 import loci.formats.services.OMEXMLService;
 import loci.formats.tiff.IFD;
+import loci.formats.tiff.TiffRational;
 import ome.units.UNITS;
 import ome.units.quantity.Length;
 import ome.xml.model.enums.DimensionOrder;
@@ -39,8 +41,12 @@ public class VSI2TIF {
     private Pyramid pyramid;
     private OMETiffWriter writer;
     private boolean verbose = false;
-    private long start;
+    private final long start;
     private int depth = 6;
+    private Length ppx;
+    private Length ppy;
+    private TiffRational px;
+    private TiffRational py;
     
     public VSI2TIF() {
         start = System.nanoTime();
@@ -91,11 +97,11 @@ public class VSI2TIF {
                 meta.setPixelsSizeZ(new PositiveInteger(1), i);
                 meta.setPixelsSizeC(new PositiveInteger(3), i);
                 meta.setPixelsSizeT(new PositiveInteger(1), i);
-                meta.setPixelsPhysicalSizeX(new Length(0.3470547596724842, UNITS.MICROMETER), i);
-                meta.setPixelsPhysicalSizeY(new Length(0.3470491808827766, UNITS.MICROMETER), i);
+                meta.setPixelsPhysicalSizeX(ppx, i);
+                meta.setPixelsPhysicalSizeY(ppy, i);
                 meta.setPixelsPhysicalSizeZ(new Length(1, UNITS.MICROMETER), i);
             }
-            for (int i=0; i<depth; i++) {
+            for (int i=1; i<depth; i++) {
                 int scale = (int) Math.pow(2, i);
                 ((OMEPyramidStore) meta).setResolutionSizeX(new PositiveInteger(reader.getSizeX() / scale), 0, i);
                 ((OMEPyramidStore) meta).setResolutionSizeY(new PositiveInteger(reader.getSizeY() / scale), 0, i);
@@ -106,8 +112,8 @@ public class VSI2TIF {
             writer.setCompression("JPEG");
             writer.setWriteSequentially(true);
             writer.setInterleaved(true);
-            writer.setTileSizeX(reader.getOptimalTileWidth());
-            writer.setTileSizeY(reader.getOptimalTileHeight());        
+            writer.setTileSizeX(tileSizeX);
+            writer.setTileSizeY(tileSizeY);
         } catch (DependencyException ex) {
             Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
         } catch (ServiceException ex) {
@@ -132,6 +138,10 @@ public class VSI2TIF {
             reader.setSeries(maximage);
             tileSizeX = reader.getOptimalTileWidth();
             tileSizeY = reader.getOptimalTileHeight();
+            MetadataRetrieve retrieve = (MetadataRetrieve) reader.getMetadataStore();
+            ppx = retrieve.getPixelsPhysicalSizeX(0);
+            ppy = retrieve.getPixelsPhysicalSizeY(0);
+            SetPPS();
             if (verbose) {
                 System.out.println("Image Size : "+reader.getSizeX()+"x"+reader.getSizeY());
                 System.out.println("Tile size  : "+tileSizeX+"x"+tileSizeY);
@@ -156,6 +166,24 @@ public class VSI2TIF {
     public int effSize(int tileX, int width) {
         return (tileX + tileSizeX) < width ? tileSizeX : width - tileX;
     }
+    
+    public void SetPPS() {
+        System.out.println("SetPPS");
+        Double physicalSizeX = ppx == null || ppx.value(UNITS.MICROMETER) == null ? null : ppx.value(UNITS.MICROMETER).doubleValue();
+        if (physicalSizeX == null || physicalSizeX.doubleValue() == 0) {
+            physicalSizeX = 0d;
+        } else {
+            physicalSizeX = 1d / physicalSizeX;
+        }
+        Double physicalSizeY = ppy == null || ppy.value(UNITS.MICROMETER) == null ? null : ppy.value(UNITS.MICROMETER).doubleValue();
+        if (physicalSizeY == null || physicalSizeY.doubleValue() == 0) {
+            physicalSizeY = 0d;
+        } else {
+            physicalSizeY = 1d / physicalSizeY;
+        }
+        px = new TiffRational((long) (physicalSizeX * 1000 * 10000), 1000);
+        py = new TiffRational((long) (physicalSizeY * 1000 * 10000), 1000);
+    }
         
     public void readWriteTiles() throws FormatException, IOException {
         if (verbose) {
@@ -171,7 +199,6 @@ public class VSI2TIF {
         pyramid = new Pyramid(nXTiles,nYTiles,reader.getOptimalTileWidth(),reader.getOptimalTileHeight());
         writer.setSeries(0);
         writer.setResolution(0);
-        System.out.println(nXTiles+"x"+nYTiles);
         for (int y=0; y<nYTiles; y++) {
             if (verbose) {
                 float perc = 100f*y/nYTiles;
@@ -185,6 +212,9 @@ public class VSI2TIF {
                 byte[] buf = reader.openBytes(0, tileX, tileY, effTileSizeX, effTileSizeY);
                 byte[] raw = reader.getRaw(0, y, x);
                 IFD ifd = new IFD();
+                ifd.put(IFD.RESOLUTION_UNIT, 3);
+                ifd.put(IFD.X_RESOLUTION, px);
+                ifd.put(IFD.Y_RESOLUTION, py);
                 ifd.put(777, raw);
                 writer.saveBytes(0, buf, ifd, tileX, tileY, effTileSizeX, effTileSizeY);
                 InputStream is = new ByteArrayInputStream(raw);
@@ -204,16 +234,15 @@ public class VSI2TIF {
             }
             writer.setSeries(0);
             writer.setResolution(s);
-            System.out.println(pyramid.gettilesX()+"x"+pyramid.gettilesY());
             for (int y=0; y<pyramid.gettilesY(); y++) {
                 for (int x=0; x<pyramid.gettilesX(); x++) {
                     byte[] b = pyramid.GetImageBytes(x, y);
                     IFD ifd = new IFD();
                     int tw = pyramid.getBufferedImage(x,y).getWidth();
                     int th = pyramid.getBufferedImage(x,y).getHeight();
-                    //ifd.putIFDValue(IFD.RESOLUTION_UNIT, 3);
-                    //ifd.putIFDValue(IFD.X_RESOLUTION, tileSizeX);
-                    //ifd.putIFDValue(IFD.Y_RESOLUTION, tileSizeY);
+                    ifd.put(IFD.RESOLUTION_UNIT, 3);
+                    ifd.put(IFD.X_RESOLUTION, px);
+                    ifd.put(IFD.Y_RESOLUTION, py);
                     ifd.put(777, b);
                     BufferedImage bi = pyramid.getBufferedImage(x, y);
                     byte[] raw = ((DataBufferByte)bi.getRaster().getDataBuffer()).getData();
@@ -241,9 +270,6 @@ public class VSI2TIF {
         }
         SetSrcDest(src,dest);
         initialize();
-        if (verbose) {
-            Lapse();
-        }
         try {
             readWriteTiles();
             Lapse();

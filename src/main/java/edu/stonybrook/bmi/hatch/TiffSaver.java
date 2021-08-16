@@ -973,18 +973,20 @@ public class TiffSaver implements Closeable {
     if (ifd.get(IFD.Y_RESOLUTION) == null) {
       ifd.putIFDValue(IFD.Y_RESOLUTION, new TiffRational(1, 1));
     }*/
+/*
     if (ifd.containsKey(IFD.X_RESOLUTION)) {
         ifd.remove(IFD.X_RESOLUTION);
     }
     if (ifd.containsKey(IFD.Y_RESOLUTION)) {
         ifd.remove(IFD.Y_RESOLUTION);
-    }
+    }*/
+    /*
     if (ifd.get(IFD.X_RESOLUTION) == null) {
       ifd.putIFDValue(IFD.X_RESOLUTION, 512);
     }
     if (ifd.get(IFD.Y_RESOLUTION) == null) {
       ifd.putIFDValue(IFD.Y_RESOLUTION, 512);
-    }
+    }*/
     if (ifd.get(IFD.SOFTWARE) == null) {
       ifd.putIFDValue(IFD.SOFTWARE, "Hatch 1.0.0 by Wing&Beak");
     }
