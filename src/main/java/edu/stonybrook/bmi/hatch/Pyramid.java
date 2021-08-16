@@ -49,13 +49,6 @@ public class Pyramid {
     public BufferedImage[][] getTiles() {
         return tiles;
     }
-    /*
-    public BufferedImage byte2Buffered(byte[] pixels, int width, int height) throws IllegalArgumentException {
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY);
-        byte[] imgData = ((DataBufferByte)image.getRaster().getDataBuffer()).getData();
-        System.arraycopy(pixels, 0, imgData, 0, pixels.length);     
-        return image;
-    }*/
     
     public void put(BufferedImage bi, int x, int y, float scale) {
         AffineTransform at = new AffineTransform();
@@ -109,7 +102,6 @@ public class Pyramid {
         BufferedImage[][] neotiles = new BufferedImage[neotilesX][neotilesY];
         for (int a=0; a<tilesX-1; a=a+2) {
             for (int b=0; b<tilesY-1; b=b+2) {
-                //System.out.println(a+" "+b+" "+neotilesX+" "+neotilesY+" "+tilesX+" "+tilesY);
                 BufferedImage nw = tiles[a][b];
                 BufferedImage ne = null;
                 BufferedImage sw = null;

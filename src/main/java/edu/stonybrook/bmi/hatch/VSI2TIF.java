@@ -40,6 +40,7 @@ public class VSI2TIF {
     private OMETiffWriter writer;
     private boolean verbose = false;
     private long start;
+    private int depth = 6;
     
     public VSI2TIF() {
         start = System.nanoTime();
@@ -94,7 +95,7 @@ public class VSI2TIF {
                 meta.setPixelsPhysicalSizeY(new Length(0.3470491808827766, UNITS.MICROMETER), i);
                 meta.setPixelsPhysicalSizeZ(new Length(1, UNITS.MICROMETER), i);
             }
-            for (int i=1; i<6; i++) {
+            for (int i=1; i<depth; i++) {
                 int scale = (int) Math.pow(2, i);
                 ((OMEPyramidStore) meta).setResolutionSizeX(new PositiveInteger(reader.getSizeX() / scale), 0, i);
                 ((OMEPyramidStore) meta).setResolutionSizeY(new PositiveInteger(reader.getSizeY() / scale), 0, i);
@@ -132,7 +133,6 @@ public class VSI2TIF {
             tileSizeX = reader.getOptimalTileWidth();
             tileSizeY = reader.getOptimalTileHeight();
             if (verbose) {
-                System.out.println("SRC Image:");
                 System.out.println("Image Size : "+reader.getSizeX()+"x"+reader.getSizeY());
                 System.out.println("Tile size  : "+tileSizeX+"x"+tileSizeY);
             }
@@ -158,6 +158,9 @@ public class VSI2TIF {
     }
         
     public void readWriteTiles() throws FormatException, IOException {
+        if (verbose) {
+            System.out.println("transferring image data...");
+        }
         reader.setSeries(maximage);
         int width = reader.getSizeX();
         int height = reader.getSizeY();
@@ -169,6 +172,10 @@ public class VSI2TIF {
         writer.setSeries(0);
         writer.setResolution(0);
         for (int y=0; y<nYTiles; y++) {
+            if (verbose) {
+                float perc = 100f*y/nYTiles;
+                System.out.println(perc+"%");
+            }
             for (int x=0; x<nXTiles; x++) {
                 int tileX = x * tileSizeX;
                 int tileY = y * tileSizeY;
@@ -185,9 +192,15 @@ public class VSI2TIF {
                 writer.saveBytes(0, buf, ifd, tileX, tileY, effTileSizeX, effTileSizeY);
             }
         }
-        
+        if (verbose) {
+            Lapse();
+            System.out.println("Generate image pyramid...");
+        }
         pyramid.Lump();
-        for (int s=1;s<6;s++) {
+        for (int s=1;s<depth;s++) {
+            if (verbose) {
+                System.out.println("Level : "+s+" of "+depth);
+            }
             writer.setSeries(0);
             writer.setResolution(s);
             for (int y=0; y<pyramid.gettilesY(); y++) {
@@ -231,7 +244,6 @@ public class VSI2TIF {
         initialize();
         if (verbose) {
             Lapse();
-            System.out.println("transferring image data...");
         }
         try {
             readWriteTiles();

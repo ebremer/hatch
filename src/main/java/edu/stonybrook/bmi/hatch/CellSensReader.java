@@ -954,7 +954,6 @@ public class CellSensReader extends FormatReader {
   }
   
   public byte[] getRaw(int no, int row, int col) throws FormatException, IOException {
-      System.out.println(no+" == "+row+","+col);
     if (tileMap.get(getCoreIndex()) == null) {
       return new byte[getTileSize()];
     }
