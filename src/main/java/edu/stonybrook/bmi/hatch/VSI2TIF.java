@@ -42,7 +42,7 @@ public class VSI2TIF {
     private OMETiffWriter writer;
     private boolean verbose = false;
     private final long start;
-    private int depth = 6;
+    private int depth;
     private Length ppx;
     private Length ppy;
     private TiffRational px;
@@ -149,6 +149,12 @@ public class VSI2TIF {
             File dest = new File(outputFile);
             if (dest.exists()) {
                 dest.delete();
+            }
+            int ss = (int) Math.ceil(Math.log(reader.getSizeX())/Math.log(2));
+            int tiless = (int) Math.ceil(Math.log(tileSizeX)/Math.log(2));
+            depth = ss-tiless;
+            if (verbose) {
+                System.out.println("# of scales to be generated : "+depth);
             }
             SetupWriter();
         } catch (DependencyException ex) {

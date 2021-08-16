@@ -1,6 +1,5 @@
 package edu.stonybrook.bmi.hatch;
 
-import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.geom.AffineTransform;
 import java.awt.image.AffineTransformOp;
@@ -84,8 +83,6 @@ public class Pyramid {
         }
         BufferedImage bi = new BufferedImage(width,height,nw.getType());
         Graphics g = bi.getGraphics();
-        g.setColor(Color.BLACK);
-        g.clearRect(0, 0, tileSizeX, tileSizeY);
         g.drawImage(nw, 0, 0, null);
         if (ne!=null) {
             g.drawImage(ne, tileSizeX/2, 0, null);
