@@ -185,19 +185,19 @@ public class TiffWriter extends FormatWriter {
    * The IFD hashtable allows specification of TIFF parameters such as bit
    * depth, compression and units. Use one IFD instance per plane.
    */
-  public void saveBytes(int no, byte[] buf, IFD ifd, int x, int y, int w, int h)
-    throws IOException, FormatException
-  {
+  public void saveBytes(int no, byte[] buf, IFD ifd, int x, int y, int w, int h) throws IOException, FormatException {
     if (checkParams) checkParams(no, buf, x, y, w, h);
     if (ifd == null) ifd = new IFD();
     MetadataRetrieve retrieve = getMetadataRetrieve();
-    int type = FormatTools.pixelTypeFromString(
-        retrieve.getPixelsType(series).toString());
+    int type = FormatTools.pixelTypeFromString(retrieve.getPixelsType(series).toString());
     int index = no;
     int currentTileSizeX = getTileSizeX();
     int currentTileSizeY = getTileSizeY();
     boolean usingTiling = currentTileSizeX > 0 && currentTileSizeY > 0;
     if (usingTiling) {
+      if ((currentTileSizeX!=512)||(currentTileSizeY!=512)) {
+          System.out.println("NAKA: "+currentTileSizeX+"x"+currentTileSizeY);
+      }
       ifd.put(new Integer(IFD.TILE_WIDTH), new Long(currentTileSizeX));
       ifd.put(new Integer(IFD.TILE_LENGTH), new Long(currentTileSizeY));
     }

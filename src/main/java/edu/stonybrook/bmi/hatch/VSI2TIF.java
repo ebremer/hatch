@@ -95,7 +95,7 @@ public class VSI2TIF {
                 meta.setPixelsPhysicalSizeY(new Length(0.3470491808827766, UNITS.MICROMETER), i);
                 meta.setPixelsPhysicalSizeZ(new Length(1, UNITS.MICROMETER), i);
             }
-            for (int i=1; i<depth; i++) {
+            for (int i=0; i<depth; i++) {
                 int scale = (int) Math.pow(2, i);
                 ((OMEPyramidStore) meta).setResolutionSizeX(new PositiveInteger(reader.getSizeX() / scale), 0, i);
                 ((OMEPyramidStore) meta).setResolutionSizeY(new PositiveInteger(reader.getSizeY() / scale), 0, i);
@@ -104,7 +104,7 @@ public class VSI2TIF {
             writer.setBigTiff(true);
             writer.setId(outputFile);
             writer.setCompression("JPEG");
-            writer.setWriteSequentially(false);
+            writer.setWriteSequentially(true);
             writer.setInterleaved(true);
             writer.setTileSizeX(reader.getOptimalTileWidth());
             writer.setTileSizeY(reader.getOptimalTileHeight());        
@@ -171,6 +171,7 @@ public class VSI2TIF {
         pyramid = new Pyramid(nXTiles,nYTiles,reader.getOptimalTileWidth(),reader.getOptimalTileHeight());
         writer.setSeries(0);
         writer.setResolution(0);
+        System.out.println(nXTiles+"x"+nYTiles);
         for (int y=0; y<nYTiles; y++) {
             if (verbose) {
                 float perc = 100f*y/nYTiles;
@@ -183,13 +184,13 @@ public class VSI2TIF {
                 int effTileSizeY = (tileY + tileSizeY) < height ? tileSizeY : height - tileY;
                 byte[] buf = reader.openBytes(0, tileX, tileY, effTileSizeX, effTileSizeY);
                 byte[] raw = reader.getRaw(0, y, x);
+                IFD ifd = new IFD();
+                ifd.put(777, raw);
+                writer.saveBytes(0, buf, ifd, tileX, tileY, effTileSizeX, effTileSizeY);
                 InputStream is = new ByteArrayInputStream(raw);
                 BufferedImage bi = ImageIO.read(is);
                 bi = bi.getSubimage(0, 0, effTileSizeX, effTileSizeY);
                 pyramid.put(bi, x, y, 0.5f);
-                IFD ifd = new IFD();
-                ifd.put(777, raw);
-                writer.saveBytes(0, buf, ifd, tileX, tileY, effTileSizeX, effTileSizeY);
             }
         }
         if (verbose) {
@@ -203,16 +204,16 @@ public class VSI2TIF {
             }
             writer.setSeries(0);
             writer.setResolution(s);
+            System.out.println(pyramid.gettilesX()+"x"+pyramid.gettilesY());
             for (int y=0; y<pyramid.gettilesY(); y++) {
                 for (int x=0; x<pyramid.gettilesX(); x++) {
                     byte[] b = pyramid.GetImageBytes(x, y);
                     IFD ifd = new IFD();
                     int tw = pyramid.getBufferedImage(x,y).getWidth();
                     int th = pyramid.getBufferedImage(x,y).getHeight();
-                    ifd.putIFDValue(IFD.NEW_SUBFILE_TYPE, 1L);
-                    ifd.putIFDValue(IFD.RESOLUTION_UNIT, 3);
-                    ifd.putIFDValue(IFD.X_RESOLUTION, tileSizeX);
-                    ifd.putIFDValue(IFD.Y_RESOLUTION, tileSizeY);
+                    //ifd.putIFDValue(IFD.RESOLUTION_UNIT, 3);
+                    //ifd.putIFDValue(IFD.X_RESOLUTION, tileSizeX);
+                    //ifd.putIFDValue(IFD.Y_RESOLUTION, tileSizeY);
                     ifd.put(777, b);
                     BufferedImage bi = pyramid.getBufferedImage(x, y);
                     byte[] raw = ((DataBufferByte)bi.getRaster().getDataBuffer()).getData();

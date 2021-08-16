@@ -1,5 +1,6 @@
 package edu.stonybrook.bmi.hatch;
 
+import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.geom.AffineTransform;
 import java.awt.image.AffineTransformOp;
@@ -74,6 +75,7 @@ public class Pyramid {
     public BufferedImage Merge(BufferedImage nw, BufferedImage ne, BufferedImage sw, BufferedImage se) {
         int width = nw.getWidth();
         int height = nw.getHeight();
+        
         if (ne!=null) {
             width = width + ne.getWidth();
         }
@@ -82,6 +84,8 @@ public class Pyramid {
         }
         BufferedImage bi = new BufferedImage(width,height,nw.getType());
         Graphics g = bi.getGraphics();
+        g.setColor(Color.BLACK);
+        g.clearRect(0, 0, tileSizeX, tileSizeY);
         g.drawImage(nw, 0, 0, null);
         if (ne!=null) {
             g.drawImage(ne, tileSizeX/2, 0, null);
@@ -97,11 +101,11 @@ public class Pyramid {
     
     public void Lump() {
         scale++;
-        int neotilesX = tilesX/2;
-        int neotilesY = tilesY/2;
+        int neotilesX = (int) Math.ceil(tilesX/2f);
+        int neotilesY = (int) Math.ceil(tilesY/2f);
         BufferedImage[][] neotiles = new BufferedImage[neotilesX][neotilesY];
-        for (int a=0; a<tilesX-1; a=a+2) {
-            for (int b=0; b<tilesY-1; b=b+2) {
+        for (int a=0; a<tilesX; a=a+2) {
+            for (int b=0; b<tilesY; b=b+2) {
                 BufferedImage nw = tiles[a][b];
                 BufferedImage ne = null;
                 BufferedImage sw = null;
@@ -114,8 +118,10 @@ public class Pyramid {
                 }
                 if ((a+1<tilesX)&&(b+1<tilesY)) {
                     se = tiles[a+1][b+1];
-                }                
-                neotiles[a/2][b/2] = Merge(nw,ne,sw,se);
+                }               
+                int nx = a/2;
+                int ny = b/2;
+                neotiles[nx][ny] = Merge(nw,ne,sw,se);
             }
         }
         tiles = neotiles;
