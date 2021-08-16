@@ -242,8 +242,6 @@ public class VSI2TIF {
     }
     
     public static void main(String[] args) {
-        String[] args2 = {"\\vsi\\001738-000598_01_01_2019071702.vsi","\\vsi\\turbo.tif"};
-        args = args2;
         loci.common.DebugTools.setRootLevel("WARN");
         VSI2TIF v2t = new VSI2TIF();
         if ((args.length<2)||args.length>3) {
