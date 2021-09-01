@@ -4,6 +4,7 @@ import java.awt.Graphics;
 import java.awt.geom.AffineTransform;
 import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -23,19 +24,20 @@ import javax.imageio.stream.MemoryCacheImageOutputStream;
  * @author erich
  */
 public class Pyramid {
-    private BufferedImage[][] tiles;
+    private JPEGBuffer[][] tiles;
     private int tilesX;
     private int tilesY;
     private final int tileSizeX;
     private final int tileSizeY;
     public int scale = 0;
+    private final float CompressionSize = 0.7f;
     
     public Pyramid(int tilesX, int tilesY, int tileSizeX, int tileSizeY) {
         this.tilesX = tilesX;
         this.tilesY = tilesY;
         this.tileSizeX = tileSizeX;
         this.tileSizeY = tileSizeY;
-        tiles = new BufferedImage[tilesX][tilesY];
+        tiles = new JPEGBuffer[tilesX][tilesY];
     }
     
     public int gettilesX() {
@@ -44,10 +46,6 @@ public class Pyramid {
     
     public int gettilesY() {
         return tilesY;
-    }
-    
-    public BufferedImage[][] getTiles() {
-        return tiles;
     }
     
     public void put(BufferedImage bi, int x, int y, float scale) {
@@ -62,19 +60,22 @@ public class Pyramid {
     public void Shrink(float scale) {
         for (int a=0; a<tilesX; a++) {
             for (int b=0; b<tilesY; b++) {
-                put(tiles[a][b],a,b,scale);
+                try {
+                    put(ImageIO.read(new ByteArrayInputStream(tiles[a][b].GetBytes())),a,b,scale);
+                } catch (IOException ex) {
+                    Logger.getLogger(Pyramid.class.getName()).log(Level.SEVERE, null, ex);
+                }
             }
         }
     }
     
     public void put(BufferedImage bi, int x, int y) {
-        tiles[x][y] = bi;
+        tiles[x][y] = new JPEGBuffer(bi,CompressionSize);
     }
     
     public BufferedImage Merge(BufferedImage nw, BufferedImage ne, BufferedImage sw, BufferedImage se) {
         int width = nw.getWidth();
         int height = nw.getHeight();
-        
         if (ne!=null) {
             width = width + ne.getWidth();
         }
@@ -100,25 +101,25 @@ public class Pyramid {
         scale++;
         int neotilesX = (int) Math.ceil(tilesX/2f);
         int neotilesY = (int) Math.ceil(tilesY/2f);
-        BufferedImage[][] neotiles = new BufferedImage[neotilesX][neotilesY];
+        JPEGBuffer[][] neotiles = new JPEGBuffer[neotilesX][neotilesY];
         for (int a=0; a<tilesX; a=a+2) {
             for (int b=0; b<tilesY; b=b+2) {
-                BufferedImage nw = tiles[a][b];
+                BufferedImage nw = tiles[a][b].GetBufferImage();
                 BufferedImage ne = null;
                 BufferedImage sw = null;
                 BufferedImage se = null;
                 if (a+1<tilesX) {
-                    ne = tiles[a+1][b];
+                    ne = tiles[a+1][b].GetBufferImage();
                 }
                 if (b+1<tilesY) {
-                    sw = tiles[a][b+1];
+                    sw = tiles[a][b+1].GetBufferImage();
                 }
                 if ((a+1<tilesX)&&(b+1<tilesY)) {
-                    se = tiles[a+1][b+1];
+                    se = tiles[a+1][b+1].GetBufferImage();
                 }               
                 int nx = a/2;
                 int ny = b/2;
-                neotiles[nx][ny] = Merge(nw,ne,sw,se);
+                neotiles[nx][ny] = new JPEGBuffer(Merge(nw,ne,sw,se),CompressionSize);
             }
         }
         tiles = neotiles;
@@ -131,13 +132,13 @@ public class Pyramid {
         ImageWriteParam param = jpgWriter.getDefaultWriteParam();
         param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
         param.setProgressiveMode(ImageWriteParam.MODE_DISABLED);
-        param.setCompressionQuality(0.5f);
+        param.setCompressionQuality(CompressionSize);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         MemoryCacheImageOutputStream outputStream = new MemoryCacheImageOutputStream(baos);
         outputStream.setByteOrder(ByteOrder.LITTLE_ENDIAN);
         jpgWriter.setOutput(outputStream);
         if (tiles[a][b]!=null) {
-            IIOImage outputImage = new IIOImage(tiles[a][b], null, null);
+            IIOImage outputImage = new IIOImage(tiles[a][b].GetBufferImage(), null, null);
             try {
                 jpgWriter.write(null, outputImage, param);
             } catch (IOException ex) {
@@ -151,7 +152,7 @@ public class Pyramid {
     }
     
     public BufferedImage getBufferedImage(int a, int b) {
-        return tiles[a][b];
+        return tiles[a][b].GetBufferImage();
     }
     
     public void Dump2File(byte[] buffer, int a, int b) {
@@ -165,7 +166,6 @@ public class Pyramid {
         } catch (IOException ex) {
             Logger.getLogger(Pyramid.class.getName()).log(Level.SEVERE, null, ex);
         }
-        
     }
     
     public void Dump() throws FileNotFoundException, IOException {
@@ -175,12 +175,12 @@ public class Pyramid {
                 ImageWriteParam param = jpgWriter.getDefaultWriteParam();
                 param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
                 param.setProgressiveMode(ImageWriteParam.MODE_DISABLED);
-                param.setCompressionQuality(0.7f);
+                param.setCompressionQuality(CompressionSize);
                 FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+scale+"----"+a+"-"+b+".jpg");
                 ImageOutputStream stream = ImageIO.createImageOutputStream(fos);
                 jpgWriter.setOutput(stream);
                 if (tiles[a][b]!=null) {
-                    IIOImage outputImage = new IIOImage(tiles[a][b], null, null);
+                    IIOImage outputImage = new IIOImage(tiles[a][b].GetBufferImage(), null, null);
                     try {
                         jpgWriter.write(null, outputImage, param);
                     } catch (IOException ex) {

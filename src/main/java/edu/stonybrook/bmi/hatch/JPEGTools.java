@@ -1,10 +1,18 @@
 package edu.stonybrook.bmi.hatch;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteOrder;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.MemoryCacheImageOutputStream;
 import loci.common.RandomAccessInputStream;
 
 /**
@@ -66,11 +74,7 @@ public class JPEGTools {
         ets.read(buffer);
         return buffer;
     }
-    
-    public static void dump(byte[] buf) {
         
-    }
-    
     public static void split(byte[] buf, int c) {
         try {
             FileOutputStream fos = new FileOutputStream("/vsi/RAH-"+c+".jpg");
@@ -81,5 +85,25 @@ public class JPEGTools {
         } catch (IOException ex) {
             Logger.getLogger(JPEGTools.class.getName()).log(Level.SEVERE, null, ex);
         }
+    }
+    
+    public static byte[] Dump2ByteArray(BufferedImage bi, float compression) {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ImageWriter jpgWriter = (ImageWriter) ImageIO.getImageWritersByFormatName("jpg").next();
+        ImageWriteParam param = jpgWriter.getDefaultWriteParam();
+        param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+        param.setProgressiveMode(ImageWriteParam.MODE_DISABLED);
+        param.setCompressionQuality(compression);
+        MemoryCacheImageOutputStream outputStream = new MemoryCacheImageOutputStream(baos);
+        outputStream.setByteOrder(ByteOrder.LITTLE_ENDIAN);
+        jpgWriter.setOutput(outputStream);
+        IIOImage outputImage = new IIOImage(bi, null, null);
+            try {
+                jpgWriter.write(null, outputImage, param);
+            } catch (IOException ex) {
+                Logger.getLogger(NeoJPEGCodec.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            jpgWriter.dispose();
+        return baos.toByteArray();
     }
 }
