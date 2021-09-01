@@ -1,0 +1,14 @@
+{
+  "resources":{
+  "includes":[
+    {"pattern":"\\Qloci/common/services/services.properties\\E"}, 
+    {"pattern":"\\Qloci/formats/FormatTools.class\\E"}, 
+    {"pattern":"\\Qorg/joda/time/tz/data/America/Chicago\\E"}, 
+    {"pattern":"\\Qorg/joda/time/tz/data/America/Denver\\E"}, 
+    {"pattern":"\\Qorg/joda/time/tz/data/America/Los_Angeles\\E"}, 
+    {"pattern":"\\Qorg/joda/time/tz/data/America/New_York\\E"}, 
+    {"pattern":"\\Qorg/joda/time/tz/data/ZoneInfoMap\\E"}, 
+    {"pattern":"\\Qorg/slf4j/impl/StaticLoggerBinder.class\\E"}
+  ]},
+  "bundles":[{"name":"sun.awt.resources.awt"}]
+}

@@ -174,7 +174,6 @@ public class VSI2TIF {
     }
     
     public void SetPPS() {
-        System.out.println("SetPPS");
         Double physicalSizeX = ppx == null || ppx.value(UNITS.MICROMETER) == null ? null : ppx.value(UNITS.MICROMETER).doubleValue();
         if (physicalSizeX == null || physicalSizeX.doubleValue() == 0) {
             physicalSizeX = 0d;
@@ -223,8 +222,7 @@ public class VSI2TIF {
                 ifd.put(IFD.Y_RESOLUTION, py);
                 ifd.put(777, raw);
                 writer.saveBytes(0, buf, ifd, tileX, tileY, effTileSizeX, effTileSizeY);
-                InputStream is = new ByteArrayInputStream(raw);
-                BufferedImage bi = ImageIO.read(is);
+                BufferedImage bi = ImageIO.read(new ByteArrayInputStream(raw));
                 bi = bi.getSubimage(0, 0, effTileSizeX, effTileSizeY);
                 pyramid.put(bi, x, y, 0.5f);
             }
@@ -265,7 +263,7 @@ public class VSI2TIF {
     }
     
     public void DisplayHelp() {
-        System.out.println("hatch - version 1.0.0");
+        System.out.println("hatch - version 1.1.0");
         System.out.println("usage: hatch <src> <dest>");
         System.out.println("-v : verbose");
     }
