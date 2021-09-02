@@ -9,36 +9,37 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
+        <ver.bioformats>6.7.0</ver.bioformats>
     </properties>
     <dependencies>
         <dependency>
             <groupId>ome</groupId>
             <artifactId>formats-gpl</artifactId>
-            <version>6.6.1</version>
+            <version>${ver.bioformats}</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>ome</groupId>
             <artifactId>loci_tools</artifactId>
-            <version>6.6.1</version>
+            <version>${ver.bioformats}</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>ome</groupId>
             <artifactId>bio-formats-tools</artifactId>
-            <version>6.6.1</version>
+            <version>${ver.bioformats}</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>ome</groupId>
             <artifactId>bio-formats_plugins</artifactId>
-            <version>6.6.1</version>
+            <version>${ver.bioformats}</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>ome</groupId>
             <artifactId>formats-api</artifactId>
-            <version>6.6.1</version>
+            <version>${ver.bioformats}</version>
             <scope>compile</scope>
         </dependency>
     </dependencies>
