@@ -11,9 +11,9 @@ Features:
 3) image pyramid is re-created from original image
 
 Usage:
-
+```
 hatch <src> <dest>
-
+```
 
 Credits and Acknowledgements:
 Many of the core files are modified files from the OME Bioformats Projects (https://github.com/ome/bioformats) such as (but not limited to):
