@@ -59,6 +59,7 @@
     <maven.compiler.target>11</maven.compiler.target>
     <maven.compiler.source>11</maven.compiler.source>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <ver.bioformats>6.7.0</ver.bioformats>
   </properties>
 </project>
 
