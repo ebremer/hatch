@@ -139,8 +139,8 @@ public class VSI2TIF {
             tileSizeX = reader.getOptimalTileWidth();
             tileSizeY = reader.getOptimalTileHeight();
             MetadataRetrieve retrieve = (MetadataRetrieve) reader.getMetadataStore();
-            ppx = retrieve.getPixelsPhysicalSizeX(0);
-            ppy = retrieve.getPixelsPhysicalSizeY(0);
+            ppx = retrieve.getPixelsPhysicalSizeX(maximage);
+            ppy = retrieve.getPixelsPhysicalSizeY(maximage);
             SetPPS();
             if (verbose) {
                 System.out.println("Image Size : "+reader.getSizeX()+"x"+reader.getSizeY());
@@ -263,7 +263,7 @@ public class VSI2TIF {
     }
     
     public void DisplayHelp() {
-        System.out.println("hatch - version 1.1.0");
+        System.out.println("hatch - version 1.1.1");
         System.out.println("usage: hatch <src> <dest>");
         System.out.println("-v : verbose");
     }
