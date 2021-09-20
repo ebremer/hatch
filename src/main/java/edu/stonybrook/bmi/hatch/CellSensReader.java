@@ -1034,11 +1034,6 @@ public class CellSensReader extends FormatReader {
         case JPEG:
             long dd = JPEGTools.FindFirstEOI(ets);
             buf = JPEGTools.GetJPG(ets, dd);
-            //Codec codec = new JPEGCodec();
-            //buf = codec.decompress(ets, options);
-            //buf = new byte[(int)(ets.getFilePointer()-offset)];
-            //ets.seek(offset);
-            //ets.read(buf);
           break;
         default:
             System.out.println("NOT JPEG!!");
