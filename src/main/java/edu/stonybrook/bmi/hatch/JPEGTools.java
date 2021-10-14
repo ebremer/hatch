@@ -2,10 +2,13 @@ package edu.stonybrook.bmi.hatch;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.IIOImage;
@@ -33,39 +36,41 @@ public class JPEGTools {
             }
         }
     }
+    
+    //public static int Compare(byte a, byte b) {
+//        return 0xff&(a-b);
+  //  }
 
-    public static int FindFirstEOI(byte[] buf) {
-        int i=0;
-        while(i<buf.length-1) {
-            //System.out.println(i+" "+Integer.toHexString(0xFF&buf[i]));
-            if (Byte.compare(buf[i],FF)==0) {
-                //System.out.println("FF DETECTED");
-                if (Byte.compare(buf[i+1],D9)==0) {
-                    //System.out.println("EOI : "+i+" "+buf.length);
-                    return i+1;
+    public static byte[] FindFirstEOI(RandomAccessInputStream ets, byte[] r) throws IOException {
+        int c=0;
+        long begin = ets.getFilePointer();
+        //System.out.println(r.length+" FindFirstEOI : "+begin+" "+ets.isLittleEndian()+" "+ets.length());
+        r[0] = ets.readByte();
+        while(ets.getFilePointer()<ets.length()) {
+            c++;
+            r[c] = ets.readByte();
+            if (Byte.compare(r[c-1],FF)==0) {
+                if (Byte.compare(r[c],D9)==0) {
+                    ets.seek(begin);
+                    return Arrays.copyOf(r, c);
                 }
             }
-            i++;
         }
-        return -1;
+        return null;
     }
     
-    public static long FindFirstEOI(RandomAccessInputStream ets) throws IOException {
-        long begin = ets.getFilePointer();
-        byte first = ets.readByte();
-        byte second = ets.readByte();
-        while(ets.getFilePointer()<ets.length()) {
-            if (Byte.compare(first,FF)==0) {
-                if (Byte.compare(second,D9)==0) {
-                    long end  = ets.getFilePointer();
-                    ets.seek(begin);
-                    return end;
+    public static byte[] FindFirstEOI(byte[] ets) throws IOException {
+        int c=0;
+//        Files.write((new File("dump.jpg")).toPath(), ets);
+        while(c<ets.length) {
+            c++;
+            if (Byte.compare(ets[c-1],FF)==0) {
+                if (Byte.compare(ets[c],D9)==0) {
+                    return Arrays.copyOf(ets, c+1);
                 }
             }
-            first = second;
-            second = ets.readByte();
         }
-        return -1;
+        return null;
     }
     
     public static byte[] GetJPG(RandomAccessInputStream ets, long end) throws IOException {
@@ -75,7 +80,7 @@ public class JPEGTools {
         return buffer;
     }
         
-    public static void split(byte[] buf, int c) {
+    public static void split2433443343(byte[] buf, int c) {
         try {
             FileOutputStream fos = new FileOutputStream("/vsi/RAH-"+c+".jpg");
             fos.write(buf);

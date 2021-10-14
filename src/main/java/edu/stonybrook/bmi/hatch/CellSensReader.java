@@ -7,8 +7,9 @@ import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.imageio.ImageIO;
-
 import loci.common.ByteArrayHandle;
 import loci.common.DataTools;
 import loci.common.DateTools;
@@ -18,13 +19,11 @@ import loci.common.Region;
 import loci.formats.CoreMetadata;
 import loci.formats.FormatException;
 import static loci.formats.FormatHandler.checkSuffix;
-import loci.formats.FormatReader;
 import loci.formats.FormatTools;
 import loci.formats.IFormatReader;
 import loci.formats.MetadataTools;
 import loci.formats.codec.Codec;
 import loci.formats.codec.CodecOptions;
-import loci.formats.codec.JPEGCodec;
 import loci.formats.codec.LosslessJPEGCodec;
 import loci.formats.codec.JPEG2000Codec;
 import loci.formats.gui.AWTImageTools;
@@ -37,7 +36,6 @@ import loci.formats.tiff.IFD;
 import loci.formats.tiff.IFDList;
 import loci.formats.tiff.PhotoInterp;
 import loci.formats.tiff.TiffParser;
-
 import ome.units.UNITS;
 import ome.xml.model.primitives.Timestamp;
 
@@ -946,14 +944,24 @@ public class CellSensReader extends FormatReader {
 
   // -- Helper methods --
 
-  private int getTileSize() {
+  public int getTileSize() {
     int channels = getRGBChannelCount();
     int bpp = FormatTools.getBytesPerPixel(getPixelType());
     int index = getCoreIndex();
     return bpp * channels * tileX.get(index) * tileY.get(index);
   }
   
-  public byte[] getRaw(int no, int row, int col) throws FormatException, IOException {
+  @Override
+  public byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col) {
+      try {
+          return getRaw(rawbuffer, no, row, col);
+      } catch (FormatException | IOException ex) {
+          Logger.getLogger(CellSensReader.class.getName()).log(Level.SEVERE, null, ex);
+      }
+      return null;
+  }
+  
+  public byte[] getRaw(byte[] rawbuffer, int no, int row, int col) throws FormatException, IOException {
     if (tileMap.get(getCoreIndex()) == null) {
       return new byte[getTileSize()];
     }
@@ -1028,16 +1036,13 @@ public class CellSensReader extends FormatReader {
         tileSize = tileX.get(getCoreIndex()) * tileY.get(getCoreIndex()) * 10;
       }
       options.maxBytes = (int) (offset + tileSize);
-      long end = index < tileOffsets.get(getCoreIndex()).length - 1 ? tileOffsets.get(getCoreIndex())[index + 1] : ets.length();
-      String file = null;
+     // long end = index < tileOffsets.get(getCoreIndex()).length - 1 ? tileOffsets.get(getCoreIndex())[index + 1] : ets.length();
       switch (compressionType.get(getCoreIndex())) {
         case JPEG:
-            long dd = JPEGTools.FindFirstEOI(ets);
-            buf = JPEGTools.GetJPG(ets, dd);
+            buf = JPEGTools.FindFirstEOI(ets,rawbuffer);
           break;
         default:
-            System.out.println("NOT JPEG!!");
-          break;
+            throw new Error("NOT JPEG!!");
       }
     } finally {
       if (reader != null) {
@@ -2487,6 +2492,16 @@ public class CellSensReader extends FormatReader {
     }
     return 1 - (core.size() - getCoreIndex());
   }
+
+    @Override
+    public byte[] getDecodedTile(byte[] rawbuffer, int no, int row, int col) {
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    @Override
+    public byte[] getRawBytes(IFD ifd, int no, int row, int col) {
+        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
+    }
 
   // -- Helper class --
 
