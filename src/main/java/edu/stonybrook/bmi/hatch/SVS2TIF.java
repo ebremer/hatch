@@ -4,8 +4,8 @@ import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
@@ -15,11 +15,14 @@ import loci.common.services.ServiceFactory;
 import loci.formats.CoreMetadata;
 import loci.formats.FormatException;
 import loci.formats.IFormatReader;
+import loci.formats.gui.AWTImageTools;
+import loci.formats.in.SVSReader;
 import loci.formats.meta.IMetadata;
 import loci.formats.meta.MetadataRetrieve;
 import loci.formats.ome.OMEPyramidStore;
 import loci.formats.services.OMEXMLService;
 import loci.formats.tiff.IFD;
+import loci.formats.tiff.IFDList;
 import loci.formats.tiff.TiffRational;
 import ome.units.UNITS;
 import ome.units.quantity.Length;
@@ -31,8 +34,8 @@ import ome.xml.model.primitives.PositiveInteger;
  *
  * @author erich
  */
-public class VSI2TIF {
-    private CellSensReader reader;
+public class SVS2TIF {
+    private SVSReader reader;
     private String inputFile;
     private String outputFile;
     private int tileSizeX;
@@ -48,7 +51,7 @@ public class VSI2TIF {
     private TiffRational px;
     private TiffRational py;
     
-    public VSI2TIF() {
+    public SVS2TIF() {
         start = System.nanoTime();
     }
     
@@ -131,7 +134,7 @@ public class VSI2TIF {
             factory = new ServiceFactory();
             OMEXMLService service = factory.getInstance(OMEXMLService.class);
             IMetadata omexml = service.createOMEXMLMetadata();
-            reader = new CellSensReader();
+            reader = new SVSReader();
             reader.setMetadataStore(omexml);
             reader.setId(inputFile);
             maximage = MaxImage(reader);
@@ -204,7 +207,12 @@ public class VSI2TIF {
         pyramid = new Pyramid(nXTiles,nYTiles,reader.getOptimalTileWidth(),reader.getOptimalTileHeight());
         writer.setSeries(0);
         writer.setResolution(0);
-        byte[] rawbuffer = new byte[reader.getTileSize()];
+        //reader.close();
+        NeoTiffParser tp = new NeoTiffParser(inputFile);
+        IFDList ifdl = tp.getMainIFDs();
+        System.out.println(ifdl.size());
+        IFD ifd = ifdl.get(0);
+        System.out.println("COMPRESSION : "+ifd.getCompression());
         for (int y=0; y<nYTiles; y++) {
             if (verbose) {
                 float perc = 100f*y/nYTiles;
@@ -215,17 +223,23 @@ public class VSI2TIF {
                 int tileY = y * tileSizeY;
                 int effTileSizeX = (tileX + tileSizeX) < width ? tileSizeX : width - tileX;
                 int effTileSizeY = (tileY + tileSizeY) < height ? tileSizeY : height - tileY;
+                System.out.println(x+","+y+" "+effTileSizeX+"x"+effTileSizeY);
                 byte[] buf = reader.openBytes(0, tileX, tileY, effTileSizeX, effTileSizeY);
-                byte[] raw = reader.getRaw(rawbuffer,0, y, x);
-                IFD ifd = new IFD();
-                ifd.put(IFD.RESOLUTION_UNIT, 3);
-                ifd.put(IFD.X_RESOLUTION, px);
-                ifd.put(IFD.Y_RESOLUTION, py);
+                byte[] raw = tp.getRawTile(ifd, y, x);
+                //FileOutputStream fos = new FileOutputStream("/HalcyonStorage/dump/"+x+"-"+y+".jp2");
+                //fos.write(raw);
+                //fos.flush();
+                //fos.close();
+                IFD ifdx = new IFD();
+                ifdx.put(IFD.RESOLUTION_UNIT, 3);
+                ifdx.put(IFD.X_RESOLUTION, px);
+                ifdx.put(IFD.Y_RESOLUTION, py);
                 ifd.put(777, raw);
                 writer.saveBytes(0, buf, ifd, tileX, tileY, effTileSizeX, effTileSizeY);
-                BufferedImage bi = ImageIO.read(new ByteArrayInputStream(raw));
+                BufferedImage bi = AWTImageTools.makeImage(buf, effTileSizeX, effTileSizeY, false);
+                //BufferedImage bi = ImageIO.read(new ByteArrayInputStream(raw));
                 bi = bi.getSubimage(0, 0, effTileSizeX, effTileSizeY);
-                pyramid.put(bi, x, y);
+                pyramid.put(bi, x, y, 0.5f);
             }
         }
         if (verbose) {
@@ -233,7 +247,6 @@ public class VSI2TIF {
             System.out.println("Generate image pyramid...");
         }
         pyramid.Lump();
-        pyramid.Shrink(0.5f);
         for (int s=1;s<depth;s++) {
             if (verbose) {
                 System.out.println("Level : "+s+" of "+depth);
@@ -243,21 +256,25 @@ public class VSI2TIF {
             for (int y=0; y<pyramid.gettilesY(); y++) {
                 for (int x=0; x<pyramid.gettilesX(); x++) {
                     byte[] b = pyramid.GetImageBytes(x, y);
-                    IFD ifd = new IFD();
-                    //System.out.println(s+" INTERLUDE : "+x+" "+y);
+                    IFD ifdx = new IFD();
                     int tw = pyramid.getBufferedImage(x,y).getWidth();
                     int th = pyramid.getBufferedImage(x,y).getHeight();
-                    ifd.put(IFD.RESOLUTION_UNIT, 3);
-                    ifd.put(IFD.X_RESOLUTION, px);
-                    ifd.put(IFD.Y_RESOLUTION, py);
-                    ifd.put(777, b);
+                    ifdx.put(IFD.RESOLUTION_UNIT, 3);
+                    ifdx.put(IFD.X_RESOLUTION, px);
+                    ifdx.put(IFD.Y_RESOLUTION, py);
+                    if (ifdx.containsKey(IFD.COMPRESSION)) {
+                        System.out.println(ifdx.getCompression());
+                        ifdx.remove(IFD.COMPRESSION);
+                    }
+                    ifdx.put(IFD.COMPRESSION, TiffCompression.JPEG.getCode());
+                    ifdx.put(777, b);
                     BufferedImage bi = pyramid.getBufferedImage(x, y);
                     byte[] raw = ((DataBufferByte)bi.getRaster().getDataBuffer()).getData();
-                    writer.saveBytes(0, raw, ifd, x*tileSizeX, y*tileSizeY, tw, th);
+                    writer.saveBytes(0, raw, ifdx, x*tileSizeX, y*tileSizeY, tw, th);
                 }
             }
-            pyramid.Lump();
             pyramid.Shrink(0.5f);
+            pyramid.Lump();
         }
     }
     
@@ -266,7 +283,7 @@ public class VSI2TIF {
     }
     
     public void DisplayHelp() {
-        System.out.println("hatch - version 1.1.2");
+        System.out.println("hatch - version 1.1.1");
         System.out.println("usage: hatch <src> <dest>");
         System.out.println("-v : verbose");
     }
@@ -287,7 +304,9 @@ public class VSI2TIF {
     
     public static void main(String[] args) {
         loci.common.DebugTools.setRootLevel("WARN");
-        VSI2TIF v2t = new VSI2TIF();
+        SVS2TIF v2t = new SVS2TIF();
+        String[] tmp = {"/HalcyonStorage/TCGA-3C-AALI-01Z-00-DX1.F6E9A5DF-D8FB-45CF-B4BD-C6B76294C291.svs","/HalcyonStorage/TCGA-3C-AALI-01Z-00-DX1.F6E9A5DF-D8FB-45CF-B4BD-C6B76294C291.tif"};
+        args = tmp;
         if ((args.length<2)||args.length>3) {
             v2t.DisplayHelp();
         } else {

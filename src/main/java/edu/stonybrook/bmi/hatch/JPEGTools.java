@@ -6,6 +6,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.IIOImage;
@@ -34,38 +35,21 @@ public class JPEGTools {
         }
     }
 
-    public static int FindFirstEOI(byte[] buf) {
-        int i=0;
-        while(i<buf.length-1) {
-            //System.out.println(i+" "+Integer.toHexString(0xFF&buf[i]));
-            if (Byte.compare(buf[i],FF)==0) {
-                //System.out.println("FF DETECTED");
-                if (Byte.compare(buf[i+1],D9)==0) {
-                    //System.out.println("EOI : "+i+" "+buf.length);
-                    return i+1;
-                }
-            }
-            i++;
-        }
-        return -1;
-    }
-    
-    public static long FindFirstEOI(RandomAccessInputStream ets) throws IOException {
+    public static byte[] FindFirstEOI(RandomAccessInputStream ets, byte[] r) throws IOException {
+        int c=0;
         long begin = ets.getFilePointer();
-        byte first = ets.readByte();
-        byte second = ets.readByte();
+        r[c] = ets.readByte();
         while(ets.getFilePointer()<ets.length()) {
-            if (Byte.compare(first,FF)==0) {
-                if (Byte.compare(second,D9)==0) {
-                    long end  = ets.getFilePointer();
+            c++;
+            r[c] = ets.readByte();
+            if (Byte.compare(r[c-1],FF)==0) {
+                if (Byte.compare(r[c],D9)==0) {
                     ets.seek(begin);
-                    return end;
+                    return Arrays.copyOf(r, c);
                 }
             }
-            first = second;
-            second = ets.readByte();
         }
-        return -1;
+        return null;
     }
     
     public static byte[] GetJPG(RandomAccessInputStream ets, long end) throws IOException {
@@ -75,7 +59,7 @@ public class JPEGTools {
         return buffer;
     }
         
-    public static void split(byte[] buf, int c) {
+    public static void split2433443343(byte[] buf, int c) {
         try {
             FileOutputStream fos = new FileOutputStream("/vsi/RAH-"+c+".jpg");
             fos.write(buf);

@@ -272,16 +272,8 @@ public class TiffSaver implements Closeable {
       int bytesPerPixel = FormatTools.getBytesPerPixel(pixelType);
       int blockSize = w * h * bytesPerPixel;
       nChannels = 3;
-      if (nChannels == null) {
-        nChannels = buf.length / (w * h * bytesPerPixel);
-      }
       interleaved = ifd.getPlanarConfiguration() == 1;
-
       makeValidIFD(ifd, pixelType, nChannels);
-
-      // create pixel output buffers
-
-      //compression = ifd.getCompression();
       compression = TiffCompression.JPEG;
       tileWidth = (int) ifd.getTileWidth();
       tileHeight = (int) ifd.getTileLength();
@@ -289,10 +281,14 @@ public class TiffSaver implements Closeable {
       int rowsPerStrip = (int) ifd.getRowsPerStrip()[0];
       int stripSize = rowsPerStrip * tileWidth * bytesPerPixel;
       nStrips = ((w + tileWidth - 1) / tileWidth) * ((h + tileHeight - 1) / tileHeight);
-
-      if (interleaved) stripSize *= nChannels;
-      else nStrips *= nChannels;
-
+      if (interleaved) {
+          stripSize *= nChannels;
+      } else {
+          nStrips *= nChannels;
+      }
+      
+      
+      
       stripBuf = new ByteArrayOutputStream[nStrips];
       DataOutputStream[] stripOut = new DataOutputStream[nStrips];
       for (int strip=0; strip<nStrips; strip++) {
@@ -375,6 +371,10 @@ public class TiffSaver implements Closeable {
           }
         }
       }
+      
+      
+      
+      
     }
 
     // Compress strips according to given differencing and compression schemes,
@@ -389,12 +389,12 @@ public class TiffSaver implements Closeable {
       codecOptions.height = tileHeight;
       codecOptions.width = tileWidth;
       codecOptions.channels = interleaved ? nChannels : 1;
-      //strips[strip] = bufbak;
       if (ifd.containsKey(777)) {
         byte[] shadow = (byte[]) ifd.get(777);
         strips[strip] = shadow;
         ifd.remove(777);
       } else {
+        System.out.println("ERROR CONDITION! Shadow bytes missing!!!");
         strips[strip] = compression.compress(strips[strip], codecOptions);
       }
       if (LOGGER.isDebugEnabled()) {
@@ -1005,8 +1005,8 @@ public class TiffSaver implements Closeable {
     boolean isTiled = ifd.isTiled();
 
     // record strip byte counts and offsets
-    List<Long> byteCounts = new ArrayList<Long>();
-    List<Long> offsets = new ArrayList<Long>();
+    List<Long> byteCounts = new ArrayList<>();
+    List<Long> offsets = new ArrayList<>();
     long totalTiles = tilesPerRow * tilesPerColumn;
 
     if (!interleaved) {

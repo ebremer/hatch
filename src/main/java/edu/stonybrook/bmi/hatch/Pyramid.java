@@ -47,14 +47,20 @@ public class Pyramid {
     public int gettilesY() {
         return tilesY;
     }
+
+    public void put(byte[] raw, int x, int y, int effTileSizeX, int effTileSizeY, float scale) throws IOException {
+        BufferedImage bi = ImageIO.read(new ByteArrayInputStream(raw));
+        bi = bi.getSubimage(0, 0, effTileSizeX, effTileSizeY);
+        put(bi, x, y);
+    }
     
     public void put(BufferedImage bi, int x, int y, float scale) {
-        AffineTransform at = new AffineTransform();
-        at.scale(scale,scale);
-        AffineTransformOp scaleOp =  new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
-        BufferedImage target = new BufferedImage(bi.getWidth()/2,bi.getHeight()/2,bi.getType());
-        scaleOp.filter(bi, target);
-        put(target,x,y);
+            AffineTransform at = new AffineTransform();
+            at.scale(scale,scale);
+            AffineTransformOp scaleOp =  new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
+            BufferedImage target = new BufferedImage(bi.getWidth()/2,bi.getHeight()/2,bi.getType());
+            scaleOp.filter(bi, target);
+            put(target,x,y);
     }
     
     public void Shrink(float scale) {
@@ -104,22 +110,24 @@ public class Pyramid {
         JPEGBuffer[][] neotiles = new JPEGBuffer[neotilesX][neotilesY];
         for (int a=0; a<tilesX; a=a+2) {
             for (int b=0; b<tilesY; b=b+2) {
-                BufferedImage nw = tiles[a][b].GetBufferImage();
-                BufferedImage ne = null;
-                BufferedImage sw = null;
-                BufferedImage se = null;
-                if (a+1<tilesX) {
-                    ne = tiles[a+1][b].GetBufferImage();
+                BufferedImage nw = getBufferedImage(a,b);
+                if (nw!=null) {
+                    BufferedImage ne = null;
+                    BufferedImage sw = null;
+                    BufferedImage se = null;
+                    if (a+1<tilesX) {
+                        ne = tiles[a+1][b].GetBufferImage();
+                    }
+                    if (b+1<tilesY) {
+                        sw = tiles[a][b+1].GetBufferImage();
+                    }
+                    if ((a+1<tilesX)&&(b+1<tilesY)) {
+                        se = tiles[a+1][b+1].GetBufferImage();
+                    }               
+                    int nx = a/2;
+                    int ny = b/2;
+                    neotiles[nx][ny] = new JPEGBuffer(Merge(nw,ne,sw,se),CompressionSize);
                 }
-                if (b+1<tilesY) {
-                    sw = tiles[a][b+1].GetBufferImage();
-                }
-                if ((a+1<tilesX)&&(b+1<tilesY)) {
-                    se = tiles[a+1][b+1].GetBufferImage();
-                }               
-                int nx = a/2;
-                int ny = b/2;
-                neotiles[nx][ny] = new JPEGBuffer(Merge(nw,ne,sw,se),CompressionSize);
             }
         }
         tiles = neotiles;
