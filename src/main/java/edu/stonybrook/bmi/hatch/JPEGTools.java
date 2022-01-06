@@ -38,12 +38,19 @@ public class JPEGTools {
     public static byte[] FindFirstEOI(RandomAccessInputStream ets, byte[] r) throws IOException {
         int c=0;
         long begin = ets.getFilePointer();
-        r[c] = ets.readByte();
+        System.out.println(r.length+" FindFirstEOI : "+begin+" "+ets.isLittleEndian()+" "+ets.length());
+        r[0] = ets.readByte();
+        boolean h=false;
         while(ets.getFilePointer()<ets.length()) {
             c++;
             r[c] = ets.readByte();
+            if (!h) {
+              System.out.println(c+" DUMP : "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
+               h=true;
+            }
             if (Byte.compare(r[c-1],FF)==0) {
                 if (Byte.compare(r[c],D9)==0) {
+                   // System.out.println(c+" DUMP : "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
                     ets.seek(begin);
                     return Arrays.copyOf(r, c);
                 }

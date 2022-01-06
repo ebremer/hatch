@@ -244,7 +244,6 @@ public class VSI2TIF {
                 for (int x=0; x<pyramid.gettilesX(); x++) {
                     byte[] b = pyramid.GetImageBytes(x, y);
                     IFD ifd = new IFD();
-                    //System.out.println(s+" INTERLUDE : "+x+" "+y);
                     int tw = pyramid.getBufferedImage(x,y).getWidth();
                     int th = pyramid.getBufferedImage(x,y).getHeight();
                     ifd.put(IFD.RESOLUTION_UNIT, 3);

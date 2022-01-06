@@ -1,5 +1,8 @@
 [
 {
+  "name":"[Lsun.java2d.loops.GraphicsPrimitive;"
+},
+{
   "name":"com.sun.imageio.plugins.jpeg.JPEGImageReader",
   "methods":[
     {"name":"acceptPixels","parameterTypes":["int","boolean"] }, 
@@ -22,14 +25,6 @@
     {"name":"warningWithMessage","parameterTypes":["java.lang.String"] }, 
     {"name":"writeMetadata","parameterTypes":[] }, 
     {"name":"writeOutputData","parameterTypes":["byte[]","int","int"] }
-  ]
-},
-{
-  "name":"java.awt.AWTEvent",
-  "fields":[
-    {"name":"bdata"}, 
-    {"name":"consumed"}, 
-    {"name":"id"}
   ]
 },
 {
@@ -65,28 +60,12 @@
   ]
 },
 {
-  "name":"java.awt.Font",
-  "fields":[
-    {"name":"pData"}, 
-    {"name":"size"}, 
-    {"name":"style"}
-  ],
-  "methods":[
-    {"name":"getFamily_NoClientCode","parameterTypes":[] }, 
-    {"name":"getFontPeer","parameterTypes":[] }
-  ]
-},
-{
-  "name":"java.awt.event.InputEvent",
-  "fields":[{"name":"modifiers"}]
+  "name":"java.awt.GraphicsEnvironment",
+  "methods":[{"name":"isHeadless","parameterTypes":[] }]
 },
 {
   "name":"java.awt.event.KeyEvent",
-  "fields":[
-    {"name":"isProxyActive"}, 
-    {"name":"keyChar"}, 
-    {"name":"keyCode"}
-  ]
+  "fields":[{"name":"isProxyActive"}]
 },
 {
   "name":"java.awt.geom.AffineTransform",
@@ -190,10 +169,21 @@
   ]
 },
 {
+  "name":"java.lang.Boolean",
+  "methods":[{"name":"getBoolean","parameterTypes":["java.lang.String"] }]
+},
+{
   "name":"java.lang.ClassLoader",
   "methods":[
     {"name":"getPlatformClassLoader","parameterTypes":[] }, 
     {"name":"loadClass","parameterTypes":["java.lang.String"] }
+  ]
+},
+{
+  "name":"java.lang.System",
+  "methods":[
+    {"name":"load","parameterTypes":["java.lang.String"] }, 
+    {"name":"setProperty","parameterTypes":["java.lang.String","java.lang.String"] }
   ]
 },
 {
@@ -211,7 +201,7 @@
   "name":"jdk.internal.loader.ClassLoaders$PlatformClassLoader"
 },
 {
-  "name":"org.graalvm.nativebridge.jni.JNIExceptionWrapperEntryPoints",
+  "name":"org.graalvm.jniutils.JNIExceptionWrapperEntryPoints",
   "methods":[{"name":"getClassName","parameterTypes":["java.lang.Class"] }]
 },
 {
@@ -379,9 +369,6 @@
 {
   "name":"sun.java2d.loops.GraphicsPrimitiveMgr",
   "methods":[{"name":"register","parameterTypes":["sun.java2d.loops.GraphicsPrimitive[]"] }]
-},
-{
-  "name":"sun.java2d.loops.GraphicsPrimitive[]"
 },
 {
   "name":"sun.java2d.loops.MaskBlit",
