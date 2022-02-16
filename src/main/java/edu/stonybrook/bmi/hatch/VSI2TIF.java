@@ -1,5 +1,6 @@
 package edu.stonybrook.bmi.hatch;
 
+import static edu.stonybrook.bmi.hatch.Bug2022.FF;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
 import java.io.ByteArrayInputStream;
@@ -265,7 +266,7 @@ public class VSI2TIF {
     }
     
     public void DisplayHelp() {
-        System.out.println("hatch - version 1.1.2");
+        System.out.println("hatch - version 1.1.3");
         System.out.println("usage: hatch <src> <dest>");
         System.out.println("-v : verbose");
     }
@@ -284,7 +285,19 @@ public class VSI2TIF {
         }
     }
     
+
     public static void main(String[] args) {
+        /*
+        byte[] a = new byte[324000];
+        byte FF = (byte) 0xff;
+        byte D9 = (byte) 0xd9;
+        a[0] = (byte) 0xff;
+        a[1] = (byte) 0xD9;
+        if (Byte.compare(a[1], D9)==0) {
+            System.out.println("YAY : "+Integer.toHexString(a[1]));
+        } else {
+            System.out.println("UGH : "+Integer.toHexString(a[1]));
+        } */   
         loci.common.DebugTools.setRootLevel("WARN");
         VSI2TIF v2t = new VSI2TIF();
         if ((args.length<2)||args.length>3) {

@@ -34,26 +34,50 @@ public class JPEGTools {
             }
         }
     }
+    
+    //public static int Compare(byte a, byte b) {
+//        return 0xff&(a-b);
+  //  }
 
     public static byte[] FindFirstEOI(RandomAccessInputStream ets, byte[] r) throws IOException {
         int c=0;
         long begin = ets.getFilePointer();
-        System.out.println(r.length+" FindFirstEOI : "+begin+" "+ets.isLittleEndian()+" "+ets.length());
+        //System.out.println(r.length+" FindFirstEOI : "+begin+" "+ets.isLittleEndian()+" "+ets.length());
         r[0] = ets.readByte();
         boolean h=false;
         while(ets.getFilePointer()<ets.length()) {
             c++;
             r[c] = ets.readByte();
             if (!h) {
-              System.out.println(c+" DUMP : "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
+              //System.out.println(c+" DUMP : "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
                h=true;
             }
             if (Byte.compare(r[c-1],FF)==0) {
                 if (Byte.compare(r[c],D9)==0) {
-                   // System.out.println(c+" DUMP : "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
+                    //System.out.println(c+" YAY : "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
                     ets.seek(begin);
                     return Arrays.copyOf(r, c);
+                } else {
+                    String whoa;
+                    if (c>1) {
+                        whoa = Integer.toHexString(r[c-2]);
+                    } else {
+                        whoa = "***";
+                    }
+                    int hey = (r[c-1] - 0xff);
+                    int hey2 = (r[c] - 0xd9);
+                    //System.out.println(c+ " "+Integer.toHexString(hey)+" "+Integer.toHexString(hey2)+" Byte compare fail for FFD9 : "+whoa+" "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
                 }
+            } else {
+                String whoa;
+                    if (c>1) {
+                        whoa = Integer.toHexString(r[c-2]);
+                    } else {
+                        whoa = "***";
+                    }
+                    int hey = r[c-1] - 0xff;
+                    int hey2 = r[c] - 0xd9;
+                    //System.out.println(c+" "+hey+" "+hey2+" Byte compare fail for FF : "+whoa+" "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
             }
         }
         return null;

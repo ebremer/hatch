@@ -988,7 +988,7 @@ public class TiffSaver implements Closeable {
       ifd.putIFDValue(IFD.Y_RESOLUTION, 512);
     }*/
     if (ifd.get(IFD.SOFTWARE) == null) {
-      ifd.putIFDValue(IFD.SOFTWARE, "Hatch 1.1.1 by Wing-n-Beak");
+      ifd.putIFDValue(IFD.SOFTWARE, "Hatch 1.1.3 by Wing-n-Beak");
     }
     if (ifd.get(IFD.ROWS_PER_STRIP) == null && ifd.get(IFD.TILE_WIDTH) == null && ifd.get(IFD.TILE_LENGTH) == null) {
       ifd.putIFDValue(IFD.ROWS_PER_STRIP, new long[] {1});
