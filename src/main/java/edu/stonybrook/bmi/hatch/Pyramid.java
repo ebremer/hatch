@@ -6,6 +6,7 @@ import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -29,7 +30,7 @@ public class Pyramid {
     private int tilesY;
     private final int tileSizeX;
     private final int tileSizeY;
-    public int scale = 0;
+    public int xscale = 0;
     private final float CompressionSize = 0.7f;
     
     public Pyramid(int tilesX, int tilesY, int tileSizeX, int tileSizeY) {
@@ -92,19 +93,19 @@ public class Pyramid {
         Graphics g = bi.getGraphics();
         g.drawImage(nw, 0, 0, null);
         if (ne!=null) {
-            g.drawImage(ne, tileSizeX/2, 0, null);
+            g.drawImage(ne, tileSizeX, 0, null);
         }
         if (sw!=null) {
-            g.drawImage(sw, 0, tileSizeY/2, null);
+            g.drawImage(sw, 0, tileSizeY, null);
         }
         if (se!=null) {
-            g.drawImage(se, tileSizeX/2, tileSizeY/2, null);
+            g.drawImage(se, tileSizeX, tileSizeY, null);
         }
         return bi;
     }
     
     public void Lump() {
-        scale++;
+        xscale++;
         int neotilesX = (int) Math.ceil(tilesX/2f);
         int neotilesY = (int) Math.ceil(tilesY/2f);
         JPEGBuffer[][] neotiles = new JPEGBuffer[neotilesX][neotilesY];
@@ -165,7 +166,7 @@ public class Pyramid {
     
     public void Dump2File(byte[] buffer, int a, int b) {
         try {
-            FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+scale+" === "+a+"-"+b+".jpg");
+            FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+xscale+" === "+a+"-"+b+".jpg");
             fos.write(buffer);
             fos.flush();
             fos.close();
@@ -184,7 +185,7 @@ public class Pyramid {
                 param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
                 param.setProgressiveMode(ImageWriteParam.MODE_DISABLED);
                 param.setCompressionQuality(CompressionSize);
-                FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+scale+"----"+a+"-"+b+".jpg");
+                FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+xscale+"----"+a+"-"+b+".jpg");
                 ImageOutputStream stream = ImageIO.createImageOutputStream(fos);
                 jpgWriter.setOutput(stream);
                 if (tiles[a][b]!=null) {

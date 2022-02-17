@@ -1,12 +1,10 @@
 package edu.stonybrook.bmi.hatch;
 
-import static edu.stonybrook.bmi.hatch.Bug2022.FF;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
@@ -102,10 +100,16 @@ public class VSI2TIF {
                 meta.setPixelsPhysicalSizeY(ppy, i);
                 meta.setPixelsPhysicalSizeZ(new Length(1, UNITS.MICROMETER), i);
             }
+            int width = reader.getSizeX();
+            int height = reader.getSizeY();
             for (int i=1; i<depth; i++) {
-                int scale = (int) Math.pow(2, i);
-                ((OMEPyramidStore) meta).setResolutionSizeX(new PositiveInteger(reader.getSizeX() / scale), 0, i);
-                ((OMEPyramidStore) meta).setResolutionSizeY(new PositiveInteger(reader.getSizeY() / scale), 0, i);
+                width = width / 2;
+                height = height / 2;
+                if (verbose) {
+                    System.out.println("Pyramid : "+width+" "+ height);
+                }
+                ((OMEPyramidStore) meta).setResolutionSizeX(new PositiveInteger(width), 0, i);
+                ((OMEPyramidStore) meta).setResolutionSizeY(new PositiveInteger(height), 0, i);
             }
             writer.setMetadataRetrieve(meta);
             writer.setBigTiff(true);
@@ -115,13 +119,7 @@ public class VSI2TIF {
             writer.setInterleaved(true);
             writer.setTileSizeX(tileSizeX);
             writer.setTileSizeY(tileSizeY);
-        } catch (DependencyException ex) {
-            Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (ServiceException ex) {
-            Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (FormatException ex) {
-            Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (IOException ex) {
+        } catch (DependencyException | ServiceException | FormatException | IOException ex) {
             Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
@@ -151,20 +149,15 @@ public class VSI2TIF {
             if (dest.exists()) {
                 dest.delete();
             }
-            int ss = (int) Math.ceil(Math.log(reader.getSizeX())/Math.log(2));
+            int size = Math.min(reader.getSizeX(), reader.getSizeY());
+            int ss = (int) Math.ceil(Math.log(size)/Math.log(2));
             int tiless = (int) Math.ceil(Math.log(tileSizeX)/Math.log(2));
             depth = ss-tiless;
             if (verbose) {
                 System.out.println("# of scales to be generated : "+depth);
             }
             SetupWriter();
-        } catch (DependencyException ex) {
-            Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (ServiceException ex) {
-            Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (FormatException ex) {
-            Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (IOException ex) {
+        } catch (DependencyException | ServiceException | FormatException | IOException ex) {
             Logger.getLogger(VSI2TIF.class.getName()).log(Level.SEVERE, null, ex);
         }
 
@@ -176,13 +169,13 @@ public class VSI2TIF {
     
     public void SetPPS() {
         Double physicalSizeX = ppx == null || ppx.value(UNITS.MICROMETER) == null ? null : ppx.value(UNITS.MICROMETER).doubleValue();
-        if (physicalSizeX == null || physicalSizeX.doubleValue() == 0) {
+        if (physicalSizeX == null || physicalSizeX == 0) {
             physicalSizeX = 0d;
         } else {
             physicalSizeX = 1d / physicalSizeX;
         }
         Double physicalSizeY = ppy == null || ppy.value(UNITS.MICROMETER) == null ? null : ppy.value(UNITS.MICROMETER).doubleValue();
-        if (physicalSizeY == null || physicalSizeY.doubleValue() == 0) {
+        if (physicalSizeY == null || physicalSizeY == 0) {
             physicalSizeY = 0d;
         } else {
             physicalSizeY = 1d / physicalSizeY;
@@ -287,17 +280,6 @@ public class VSI2TIF {
     
 
     public static void main(String[] args) {
-        /*
-        byte[] a = new byte[324000];
-        byte FF = (byte) 0xff;
-        byte D9 = (byte) 0xd9;
-        a[0] = (byte) 0xff;
-        a[1] = (byte) 0xD9;
-        if (Byte.compare(a[1], D9)==0) {
-            System.out.println("YAY : "+Integer.toHexString(a[1]));
-        } else {
-            System.out.println("UGH : "+Integer.toHexString(a[1]));
-        } */   
         loci.common.DebugTools.setRootLevel("WARN");
         VSI2TIF v2t = new VSI2TIF();
         if ((args.length<2)||args.length>3) {
