@@ -185,7 +185,7 @@ public class TiffWriter extends FormatWriter {
    * The IFD hashtable allows specification of TIFF parameters such as bit
    * depth, compression and units. Use one IFD instance per plane.
    */
-  public void saveBytes(int no, byte[] buf, IFD ifd, int x, int y, int w, int h) throws IOException, FormatException {
+ public void saveBytes(int no, byte[] buf, IFD ifd, int x, int y, int w, int h) throws IOException, FormatException {
     if (checkParams) checkParams(no, buf, x, y, w, h);
     if (ifd == null) ifd = new IFD();
     MetadataRetrieve retrieve = getMetadataRetrieve();
@@ -202,6 +202,7 @@ public class TiffWriter extends FormatWriter {
       ifd.put(new Integer(IFD.TILE_LENGTH), new Long(currentTileSizeY));
     }
     if (usingTiling && (currentTileSizeX < w || currentTileSizeY < h)) {
+        System.out.println("ARRRGH");
       int numTilesX = (w + (x % currentTileSizeX) + currentTileSizeX - 1) / currentTileSizeX;
       int numTilesY = (h + (y % currentTileSizeY) + currentTileSizeY - 1) / currentTileSizeY;
       for (int yTileIndex = 0; yTileIndex < numTilesY; yTileIndex++) {
@@ -256,9 +257,7 @@ public class TiffWriter extends FormatWriter {
    * This method is factored out from <code>saveBytes()</code> in an attempt to
    * ensure thread safety.
    */
-  protected int prepareToWriteImage(
-      int no, byte[] buf, IFD ifd, int x, int y, int w, int h)
-  throws IOException, FormatException {
+  protected int prepareToWriteImage(int no, byte[] buf, IFD ifd, int x, int y, int w, int h) throws IOException, FormatException {
     MetadataRetrieve retrieve = getMetadataRetrieve();
     boolean littleEndian = false;
     if (retrieve.getPixelsBigEndian(series) != null) {
@@ -340,10 +339,8 @@ public class TiffWriter extends FormatWriter {
     else physicalSizeY = 1d / physicalSizeY;
 
     ifd.put(IFD.RESOLUTION_UNIT, 3);
-    ifd.put(IFD.X_RESOLUTION,
-      new TiffRational((long) (physicalSizeX * 1000 * 10000), 1000));
-    ifd.put(IFD.Y_RESOLUTION,
-      new TiffRational((long) (physicalSizeY * 1000 * 10000), 1000));
+    ifd.put(IFD.X_RESOLUTION, new TiffRational((long) (physicalSizeX * 1000 * 10000), 1000));
+    ifd.put(IFD.Y_RESOLUTION, new TiffRational((long) (physicalSizeY * 1000 * 10000), 1000));
 
     if (!isBigTiff) {
       isBigTiff = (out.length() + 2

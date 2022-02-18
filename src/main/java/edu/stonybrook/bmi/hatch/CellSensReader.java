@@ -946,14 +946,14 @@ public class CellSensReader extends FormatReader {
 
   // -- Helper methods --
 
-  private int getTileSize() {
+  public int getTileSize() {
     int channels = getRGBChannelCount();
     int bpp = FormatTools.getBytesPerPixel(getPixelType());
     int index = getCoreIndex();
     return bpp * channels * tileX.get(index) * tileY.get(index);
   }
   
-  public byte[] getRaw(int no, int row, int col) throws FormatException, IOException {
+  public byte[] getRaw(byte[] rawbuffer, int no, int row, int col) throws FormatException, IOException {
     if (tileMap.get(getCoreIndex()) == null) {
       return new byte[getTileSize()];
     }
@@ -1029,11 +1029,9 @@ public class CellSensReader extends FormatReader {
       }
       options.maxBytes = (int) (offset + tileSize);
       long end = index < tileOffsets.get(getCoreIndex()).length - 1 ? tileOffsets.get(getCoreIndex())[index + 1] : ets.length();
-      String file = null;
       switch (compressionType.get(getCoreIndex())) {
         case JPEG:
-            long dd = JPEGTools.FindFirstEOI(ets);
-            buf = JPEGTools.GetJPG(ets, dd);
+            buf = JPEGTools.FindFirstEOI(ets,rawbuffer);
           break;
         default:
             System.out.println("NOT JPEG!!");

@@ -6,6 +6,7 @@
 package edu.stonybrook.bmi.hatch;
 
 import java.io.Closeable;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -792,11 +793,152 @@ public class TiffParser implements Closeable {
       in.read(tile);
     }
 
+    FileOutputStream fos = new FileOutputStream("/HalcyonStorage/wow.jp2");
+    fos.write(tile);
+    fos.flush();
+    fos.close();
+    
     // reverse bits in each byte if FillOrder == 2
 
-    if (ifd.getIFDIntValue(IFD.FILL_ORDER) == 2 &&
-      compression.getCode() <= loci.formats.tiff.TiffCompression.GROUP_4_FAX.getCode())
+    if (ifd.getIFDIntValue(IFD.FILL_ORDER) == 2 && compression.getCode() <= loci.formats.tiff.TiffCompression.GROUP_4_FAX.getCode()) {
+      for (int i=0; i<tile.length; i++) {
+        tile[i] = (byte) (Integer.reverse(tile[i]) >> 24);
+      }
+    }
+
+    codecOptions.maxBytes = (int) Math.max(size, tile.length);
+    codecOptions.ycbcr =
+      ifd.getPhotometricInterpretation() == PhotoInterp.Y_CB_CR &&
+      ifd.getIFDIntValue(IFD.Y_CB_CR_SUB_SAMPLING) == 1 && ycbcrCorrection;
+
+    tile = compression.decompress(tile, codecOptions);
+    loci.formats.tiff.TiffCompression.undifference(tile, ifd);
+    unpackBytes(buf, 0, tile, ifd);
+
+    if (planarConfig == 2 && !ifd.isTiled() && ifd.getSamplesPerPixel() > 1) {
+      int channel = (int) (row % nStrips);
+      if (channel < ifd.getBytesPerSample().length) {
+        int realBytes = ifd.getBytesPerSample()[channel];
+        if (realBytes != pixel) {
+          // re-pack pixels to account for differing bits per sample
+
+          boolean littleEndian = ifd.isLittleEndian();
+          int[] samples = new int[buf.length / pixel];
+          for (int i=0; i<samples.length; i++) {
+            samples[i] =
+              DataTools.bytesToInt(buf, i * realBytes, realBytes, littleEndian);
+          }
+
+          for (int i=0; i<samples.length; i++) {
+            DataTools.unpackBytes(
+              samples[i], buf, i * pixel, pixel, littleEndian);
+          }
+        }
+      }
+    }
+
+    return buf;
+  }
+  
+  public byte[] getRawTile(IFD ifd, byte[] buf, int row, int col) throws FormatException, IOException {
+    byte[] jpegTable = (byte[]) ifd.getIFDValue(IFD.JPEG_TABLES);
+
+    codecOptions.interleaved = true;
+    codecOptions.littleEndian = ifd.isLittleEndian();
+
+    long tileWidth = ifd.getTileWidth();
+    long tileLength = ifd.getTileLength();
+    int samplesPerPixel = ifd.getSamplesPerPixel();
+    int planarConfig = ifd.getPlanarConfiguration();
+    loci.formats.tiff.TiffCompression compression = ifd.getCompression();
+
+    long numTileCols = ifd.getTilesPerRow();
+
+    int pixel = ifd.getBytesPerSample()[0];
+    int effectiveChannels = planarConfig == 2 ? 1 : samplesPerPixel;
+
+    if (ifd.get(IFD.STRIP_BYTE_COUNTS) instanceof OnDemandLongArray) {
+      OnDemandLongArray counts = (OnDemandLongArray) ifd.get(IFD.STRIP_BYTE_COUNTS);
+      if (counts != null) {
+        counts.setStream(in);
+      }
+    }
+    if (ifd.get(IFD.TILE_BYTE_COUNTS) instanceof OnDemandLongArray) {
+      OnDemandLongArray counts = (OnDemandLongArray) ifd.get(IFD.TILE_BYTE_COUNTS);
+      if (counts != null) {
+        counts.setStream(in);
+      }
+    }
+
+    long[] stripByteCounts = ifd.getStripByteCounts();
+    long[] rowsPerStrip = ifd.getRowsPerStrip();
+
+    int offsetIndex = (int) (row * numTileCols + col);
+    int countIndex = offsetIndex;
+    if (equalStrips) {
+      countIndex = 0;
+    }
+    if (stripByteCounts[countIndex] == (rowsPerStrip[0] * tileWidth) &&
+      pixel > 1)
     {
+      stripByteCounts[countIndex] *= pixel;
+    }
+    else if (stripByteCounts[countIndex] < 0 && countIndex > 0) {
+      LOGGER.debug("byte count #{} was {}; correcting to {}", countIndex,
+        stripByteCounts[countIndex], stripByteCounts[countIndex - 1]);
+      stripByteCounts[countIndex] = stripByteCounts[countIndex - 1];
+    }
+
+    long stripOffset = 0;
+    long nStrips = 0;
+
+    if (ifd.getOnDemandStripOffsets() != null) {
+      OnDemandLongArray stripOffsets = ifd.getOnDemandStripOffsets();
+      stripOffsets.setStream(in);
+      stripOffset = stripOffsets.get(offsetIndex);
+      nStrips = stripOffsets.size();
+    }
+    else {
+      long[] stripOffsets = ifd.getStripOffsets();
+      stripOffset = stripOffsets[offsetIndex];
+      nStrips = stripOffsets.length;
+    }
+
+    int size = (int) (tileWidth * tileLength * pixel * effectiveChannels);
+
+    if (buf == null) buf = new byte[size];
+    if (stripByteCounts[countIndex] == 0 || stripOffset >= in.length()) {
+      // make sure that the buffer is cleared before returning
+      // the caller may be reusing the same buffer for multiple calls to getTile
+      Arrays.fill(buf, (byte) 0);
+      return buf;
+    }
+    int tileSize = (int) stripByteCounts[countIndex];
+    if (jpegTable != null) {
+      tileSize += jpegTable.length - 2;
+    }
+    byte[] tile = new byte[tileSize];
+
+    LOGGER.debug("Reading tile Length {} Offset {}", tile.length, stripOffset);
+
+    if (jpegTable != null) {
+      System.arraycopy(jpegTable, 0, tile, 0, jpegTable.length - 2);
+      in.seek(stripOffset + 2);
+      in.read(tile, jpegTable.length - 2, tile.length - (jpegTable.length - 2));
+    }
+    else {
+      in.seek(stripOffset);
+      in.read(tile);
+    }
+
+//    FileOutputStream fos = new FileOutputStream("/HalcyonStorage/wow.jp2");
+//    fos.write(tile);
+//    fos.flush();
+  //  fos.close();
+    
+    // reverse bits in each byte if FillOrder == 2
+
+    if (ifd.getIFDIntValue(IFD.FILL_ORDER) == 2 && compression.getCode() <= loci.formats.tiff.TiffCompression.GROUP_4_FAX.getCode()) {
       for (int i=0; i<tile.length; i++) {
         tile[i] = (byte) (Integer.reverse(tile[i]) >> 24);
       }

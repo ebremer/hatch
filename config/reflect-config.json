@@ -1,29 +1,5 @@
 [
 {
-  "name":"ch.qos.logback.classic.pattern.DateConverter",
-  "methods":[{"name":"<init>","parameterTypes":[] }]
-},
-{
-  "name":"ch.qos.logback.classic.pattern.LevelConverter",
-  "methods":[{"name":"<init>","parameterTypes":[] }]
-},
-{
-  "name":"ch.qos.logback.classic.pattern.LineSeparatorConverter",
-  "methods":[{"name":"<init>","parameterTypes":[] }]
-},
-{
-  "name":"ch.qos.logback.classic.pattern.LoggerConverter",
-  "methods":[{"name":"<init>","parameterTypes":[] }]
-},
-{
-  "name":"ch.qos.logback.classic.pattern.MessageConverter",
-  "methods":[{"name":"<init>","parameterTypes":[] }]
-},
-{
-  "name":"ch.qos.logback.classic.pattern.ThreadConverter",
-  "methods":[{"name":"<init>","parameterTypes":[] }]
-},
-{
   "name":"java.awt.image.AffineTransformOp"
 },
 {
@@ -52,9 +28,6 @@
   "name":"java.security.AllPermission"
 },
 {
-  "name":"java.security.MessageDigestSpi"
-},
-{
   "name":"java.security.SecureRandomParameters"
 },
 {
@@ -68,9 +41,9 @@
 },
 {
   "name":"javax.imageio.spi.ImageReaderWriterSpi",
-  "methods":[
+  "methods":[{"name":"getFormatNames","parameterTypes":[] }],
+  "queriedMethods":[
     {"name":"getFileSuffixes","parameterTypes":[] }, 
-    {"name":"getFormatNames","parameterTypes":[] }, 
     {"name":"getMIMETypes","parameterTypes":[] }
   ]
 },
@@ -171,10 +144,6 @@
 },
 {
   "name":"ome.codecs.services.LuraWaveServiceImpl"
-},
-{
-  "name":"sun.awt.X11GraphicsEnvironment",
-  "methods":[{"name":"<init>","parameterTypes":[] }]
 },
 {
   "name":"sun.java2d.marlin.DMarlinRenderingEngine",

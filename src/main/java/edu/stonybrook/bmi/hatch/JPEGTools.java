@@ -6,6 +6,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.IIOImage;
@@ -33,39 +34,53 @@ public class JPEGTools {
             }
         }
     }
-
-    public static int FindFirstEOI(byte[] buf) {
-        int i=0;
-        while(i<buf.length-1) {
-            //System.out.println(i+" "+Integer.toHexString(0xFF&buf[i]));
-            if (Byte.compare(buf[i],FF)==0) {
-                //System.out.println("FF DETECTED");
-                if (Byte.compare(buf[i+1],D9)==0) {
-                    //System.out.println("EOI : "+i+" "+buf.length);
-                    return i+1;
-                }
-            }
-            i++;
-        }
-        return -1;
-    }
     
-    public static long FindFirstEOI(RandomAccessInputStream ets) throws IOException {
+    //public static int Compare(byte a, byte b) {
+//        return 0xff&(a-b);
+  //  }
+
+    public static byte[] FindFirstEOI(RandomAccessInputStream ets, byte[] r) throws IOException {
+        int c=0;
         long begin = ets.getFilePointer();
-        byte first = ets.readByte();
-        byte second = ets.readByte();
+        //System.out.println(r.length+" FindFirstEOI : "+begin+" "+ets.isLittleEndian()+" "+ets.length());
+        r[0] = ets.readByte();
+        boolean h=false;
         while(ets.getFilePointer()<ets.length()) {
-            if (Byte.compare(first,FF)==0) {
-                if (Byte.compare(second,D9)==0) {
-                    long end  = ets.getFilePointer();
-                    ets.seek(begin);
-                    return end;
-                }
+            c++;
+            r[c] = ets.readByte();
+            if (!h) {
+              //System.out.println(c+" DUMP : "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
+               h=true;
             }
-            first = second;
-            second = ets.readByte();
+            if (Byte.compare(r[c-1],FF)==0) {
+                if (Byte.compare(r[c],D9)==0) {
+                    //System.out.println(c+" YAY : "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
+                    ets.seek(begin);
+                    return Arrays.copyOf(r, c);
+                } else {
+                    String whoa;
+                    if (c>1) {
+                        whoa = Integer.toHexString(r[c-2]);
+                    } else {
+                        whoa = "***";
+                    }
+                    int hey = (r[c-1] - 0xff);
+                    int hey2 = (r[c] - 0xd9);
+                    //System.out.println(c+ " "+Integer.toHexString(hey)+" "+Integer.toHexString(hey2)+" Byte compare fail for FFD9 : "+whoa+" "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
+                }
+            } else {
+                String whoa;
+                    if (c>1) {
+                        whoa = Integer.toHexString(r[c-2]);
+                    } else {
+                        whoa = "***";
+                    }
+                    int hey = r[c-1] - 0xff;
+                    int hey2 = r[c] - 0xd9;
+                    //System.out.println(c+" "+hey+" "+hey2+" Byte compare fail for FF : "+whoa+" "+Integer.toHexString(r[c-1])+" "+Integer.toHexString(r[c]));
+            }
         }
-        return -1;
+        return null;
     }
     
     public static byte[] GetJPG(RandomAccessInputStream ets, long end) throws IOException {
@@ -75,7 +90,7 @@ public class JPEGTools {
         return buffer;
     }
         
-    public static void split(byte[] buf, int c) {
+    public static void split2433443343(byte[] buf, int c) {
         try {
             FileOutputStream fos = new FileOutputStream("/vsi/RAH-"+c+".jpg");
             fos.write(buf);

@@ -6,6 +6,7 @@ import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -29,7 +30,7 @@ public class Pyramid {
     private int tilesY;
     private final int tileSizeX;
     private final int tileSizeY;
-    public int scale = 0;
+    public int xscale = 0;
     private final float CompressionSize = 0.7f;
     
     public Pyramid(int tilesX, int tilesY, int tileSizeX, int tileSizeY) {
@@ -47,14 +48,20 @@ public class Pyramid {
     public int gettilesY() {
         return tilesY;
     }
+
+    public void put(byte[] raw, int x, int y, int effTileSizeX, int effTileSizeY, float scale) throws IOException {
+        BufferedImage bi = ImageIO.read(new ByteArrayInputStream(raw));
+        bi = bi.getSubimage(0, 0, effTileSizeX, effTileSizeY);
+        put(bi, x, y);
+    }
     
     public void put(BufferedImage bi, int x, int y, float scale) {
-        AffineTransform at = new AffineTransform();
-        at.scale(scale,scale);
-        AffineTransformOp scaleOp =  new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
-        BufferedImage target = new BufferedImage(bi.getWidth()/2,bi.getHeight()/2,bi.getType());
-        scaleOp.filter(bi, target);
-        put(target,x,y);
+            AffineTransform at = new AffineTransform();
+            at.scale(scale,scale);
+            AffineTransformOp scaleOp =  new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
+            BufferedImage target = new BufferedImage(bi.getWidth()/2,bi.getHeight()/2,bi.getType());
+            scaleOp.filter(bi, target);
+            put(target,x,y);
     }
     
     public void Shrink(float scale) {
@@ -86,40 +93,42 @@ public class Pyramid {
         Graphics g = bi.getGraphics();
         g.drawImage(nw, 0, 0, null);
         if (ne!=null) {
-            g.drawImage(ne, tileSizeX/2, 0, null);
+            g.drawImage(ne, tileSizeX, 0, null);
         }
         if (sw!=null) {
-            g.drawImage(sw, 0, tileSizeY/2, null);
+            g.drawImage(sw, 0, tileSizeY, null);
         }
         if (se!=null) {
-            g.drawImage(se, tileSizeX/2, tileSizeY/2, null);
+            g.drawImage(se, tileSizeX, tileSizeY, null);
         }
         return bi;
     }
     
     public void Lump() {
-        scale++;
+        xscale++;
         int neotilesX = (int) Math.ceil(tilesX/2f);
         int neotilesY = (int) Math.ceil(tilesY/2f);
         JPEGBuffer[][] neotiles = new JPEGBuffer[neotilesX][neotilesY];
         for (int a=0; a<tilesX; a=a+2) {
             for (int b=0; b<tilesY; b=b+2) {
-                BufferedImage nw = tiles[a][b].GetBufferImage();
-                BufferedImage ne = null;
-                BufferedImage sw = null;
-                BufferedImage se = null;
-                if (a+1<tilesX) {
-                    ne = tiles[a+1][b].GetBufferImage();
+                BufferedImage nw = getBufferedImage(a,b);
+                if (nw!=null) {
+                    BufferedImage ne = null;
+                    BufferedImage sw = null;
+                    BufferedImage se = null;
+                    if (a+1<tilesX) {
+                        ne = tiles[a+1][b].GetBufferImage();
+                    }
+                    if (b+1<tilesY) {
+                        sw = tiles[a][b+1].GetBufferImage();
+                    }
+                    if ((a+1<tilesX)&&(b+1<tilesY)) {
+                        se = tiles[a+1][b+1].GetBufferImage();
+                    }               
+                    int nx = a/2;
+                    int ny = b/2;
+                    neotiles[nx][ny] = new JPEGBuffer(Merge(nw,ne,sw,se),CompressionSize);
                 }
-                if (b+1<tilesY) {
-                    sw = tiles[a][b+1].GetBufferImage();
-                }
-                if ((a+1<tilesX)&&(b+1<tilesY)) {
-                    se = tiles[a+1][b+1].GetBufferImage();
-                }               
-                int nx = a/2;
-                int ny = b/2;
-                neotiles[nx][ny] = new JPEGBuffer(Merge(nw,ne,sw,se),CompressionSize);
             }
         }
         tiles = neotiles;
@@ -157,7 +166,7 @@ public class Pyramid {
     
     public void Dump2File(byte[] buffer, int a, int b) {
         try {
-            FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+scale+" === "+a+"-"+b+".jpg");
+            FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+xscale+" === "+a+"-"+b+".jpg");
             fos.write(buffer);
             fos.flush();
             fos.close();
@@ -176,7 +185,7 @@ public class Pyramid {
                 param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
                 param.setProgressiveMode(ImageWriteParam.MODE_DISABLED);
                 param.setCompressionQuality(CompressionSize);
-                FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+scale+"----"+a+"-"+b+".jpg");
+                FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+xscale+"----"+a+"-"+b+".jpg");
                 ImageOutputStream stream = ImageIO.createImageOutputStream(fos);
                 jpgWriter.setOutput(stream);
                 if (tiles[a][b]!=null) {
