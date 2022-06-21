@@ -30,7 +30,7 @@ public class Pyramid {
     private int tilesY;
     private final int tileSizeX;
     private final int tileSizeY;
-    public int xscale = 0;
+    private int xscale = 0;
     private final float CompressionSize = 0.7f;
     
     public Pyramid(int tilesX, int tilesY, int tileSizeX, int tileSizeY) {
@@ -56,15 +56,25 @@ public class Pyramid {
     }
     
     public void put(BufferedImage bi, int x, int y, float scale) {
-            AffineTransform at = new AffineTransform();
-            at.scale(scale,scale);
-            AffineTransformOp scaleOp =  new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
-            BufferedImage target = new BufferedImage(bi.getWidth()/2,bi.getHeight()/2,bi.getType());
-            scaleOp.filter(bi, target);
-            put(target,x,y);
+        //System.out.println("put(BufferedImage bi, int x, int y, float scale) "+bi.getWidth()+" "+bi.getHeight()+" "+x+" "+y+" "+scale);
+        AffineTransform at = new AffineTransform();
+        at.scale(scale,scale);
+        AffineTransformOp scaleOp =  new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
+        BufferedImage target = new BufferedImage(bi.getWidth()/2,bi.getHeight()/2,bi.getType());
+        scaleOp.filter(bi, target);
+        put(target,x,y);
     }
     
     public void Shrink(float scale) {
+        JPEGBuffer c = tiles[tilesX-1][tilesY-1];
+        if (c.GetBufferImage().getWidth()==1) {
+            System.out.println("shrink clip x");
+           tilesX--;
+        }
+        if (c.GetBufferImage().getHeight()==1) {
+           System.out.println("shrink clip y");
+           tilesY--;
+        }
         for (int a=0; a<tilesX; a++) {
             for (int b=0; b<tilesY; b++) {
                 try {
@@ -166,10 +176,14 @@ public class Pyramid {
     
     public void Dump2File(byte[] buffer, int a, int b) {
         try {
-            FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+xscale+" === "+a+"-"+b+".jpg");
-            fos.write(buffer);
-            fos.flush();
-            fos.close();
+            File f = new File("/vsi/dump/"+xscale+" === "+a+"-"+b+".jpg");
+            if (!f.getParentFile().exists()) {
+                f.getParentFile().mkdirs();
+            }
+            try (FileOutputStream fos = new FileOutputStream(f)) {
+                fos.write(buffer);
+                fos.flush();
+            }
         } catch (FileNotFoundException ex) {
             Logger.getLogger(Pyramid.class.getName()).log(Level.SEVERE, null, ex);
         } catch (IOException ex) {
