@@ -1,5 +1,6 @@
 package edu.stonybrook.bmi.hatch;
 
+import static edu.stonybrook.bmi.hatch.VSI2TIF.software;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.DataOutputStream;
@@ -988,7 +989,7 @@ public class TiffSaver implements Closeable {
       ifd.putIFDValue(IFD.Y_RESOLUTION, 512);
     }*/
     if (ifd.get(IFD.SOFTWARE) == null) {
-      ifd.putIFDValue(IFD.SOFTWARE, "Hatch 1.1.3 by Wing-n-Beak");
+      ifd.putIFDValue(IFD.SOFTWARE, software);
     }
     if (ifd.get(IFD.ROWS_PER_STRIP) == null && ifd.get(IFD.TILE_WIDTH) == null && ifd.get(IFD.TILE_LENGTH) == null) {
       ifd.putIFDValue(IFD.ROWS_PER_STRIP, new long[] {1});
