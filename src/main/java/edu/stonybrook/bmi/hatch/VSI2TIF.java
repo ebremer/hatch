@@ -110,11 +110,8 @@ public class VSI2TIF {
             for (int j=1; j<depth; j++) {
                 int cx = ((w%(2*tileSizeX))==1) ? 1 : 0;
                 int cy = ((h%(2*tileSizeY))==1) ? 1 : 0;
-                System.out.println((h%(2*tileSizeY)));
-                System.out.println(w+" B "+h+"  cx/cy "+cx+" "+cy);
                 w = (w / 2) - cx;
                 h = (h / 2) - cy;
-                System.out.println(w+" A "+h);
                 if (verbose) {
                     if (cx==1) System.out.println("clip x");
                     if (cy==1) System.out.println("clip y");
@@ -300,7 +297,7 @@ public class VSI2TIF {
                     byte[] raw = baos.toByteArray();
                     //byte[] raw = ((DataBufferByte)bi.getRaster().getDataBuffer()).getData();
                     writer.saveBytes(0, raw, ifd, x*tileSizeX, y*tileSizeY, tw, th);
-                    pyramid.Dump2File(raw, x, y);
+                    //pyramid.Dump2File(raw, x, y);
                 }
             }
         }
