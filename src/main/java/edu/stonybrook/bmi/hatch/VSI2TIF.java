@@ -151,8 +151,6 @@ public class VSI2TIF {
             tileSizeY = reader.getOptimalTileHeight();
             width = reader.getSizeX();
             height = reader.getSizeY();
-            //width = width /5;
-            //height = height /5;
             MetadataRetrieve retrieve = (MetadataRetrieve) reader.getMetadataStore();
             ppx = retrieve.getPixelsPhysicalSizeX(maximage);
             ppy = retrieve.getPixelsPhysicalSizeY(maximage);
@@ -262,7 +260,7 @@ public class VSI2TIF {
                 ifd.put(IFD.X_RESOLUTION, px);
                 ifd.put(IFD.Y_RESOLUTION, py);
                 ifd.put(777, raw);
-                Dump2File(raw,x,y);
+                //Dump2File(raw,x,y);
                 writer.saveBytes(0, buf, ifd, tileX, tileY, effTileSizeX, effTileSizeY);
                 BufferedImage bi = ImageIO.read(new ByteArrayInputStream(raw));
                 //DumpBI2File(bi,x,y);
