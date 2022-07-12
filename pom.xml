@@ -1,102 +1,96 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    <groupId>edu.stonybrook.bmi</groupId>
-    <artifactId>hatch</artifactId>
-    <version>1.1.1</version>
-    <packaging>jar</packaging>
-    <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <ver.bioformats>6.7.0</ver.bioformats>
-    </properties>
-    <dependencies>
-        <dependency>
-            <groupId>ome</groupId>
-            <artifactId>formats-gpl</artifactId>
-            <version>${ver.bioformats}</version>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>ome</groupId>
-            <artifactId>loci_tools</artifactId>
-            <version>${ver.bioformats}</version>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>ome</groupId>
-            <artifactId>bio-formats-tools</artifactId>
-            <version>${ver.bioformats}</version>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>ome</groupId>
-            <artifactId>bio-formats_plugins</artifactId>
-            <version>${ver.bioformats}</version>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>ome</groupId>
-            <artifactId>formats-api</artifactId>
-            <version>${ver.bioformats}</version>
-            <scope>compile</scope>
-        </dependency>
-    </dependencies>
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>2.4.3</version>
-                <configuration>
-                    <shadedArtifactAttached>false</shadedArtifactAttached>
-                    <transformers>
-                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                            <mainClass>edu.stonybrook.bmi.hatch.VSI2TIF</mainClass>
-                        </transformer>
-                        <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
-                        <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer" />
-                        <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
-                            <addHeader>false</addHeader>
-                        </transformer>
-                    </transformers>
-                <filters>
-                    <filter>
-                        <artifact>*:*</artifact>
-                        <excludes>
-                            <!-- Some jars are signed but shading breaks that.
-                                Don't include signing files.
-                            -->
-                            <exclude>META-INF/*.SF</exclude>
-                            <exclude>META-INF/*.DSA</exclude>
-                            <exclude>META-INF/*.RSA</exclude>
-                        </excludes>
-                    </filter>
-                </filters>
-                </configuration>
-                <executions>
-                    <execution>
-                    <phase>package</phase>
-                    <!--<phase /><!- - Switch off -->
-                    <goals>
-                        <goal>shade</goal>
-                    </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-    <repositories>
-        <repository>
-            <id>central</id>
-            <name>Central Repository</name>
-            <url>http://repo.maven.apache.org/maven2</url>
-        </repository>
-        <repository>
-            <id>ome</id>
-            <name>OME Artifactory</name>
-            <url>http://artifacts.openmicroscopy.org/artifactory/maven/</url>
-        </repository>
-    </repositories>
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>edu.stonybrook.bmi</groupId>
+	<artifactId>hatch</artifactId>
+	<version>2.0.0</version>
+	<packaging>jar</packaging>
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<maven.compiler.source>11</maven.compiler.source>
+		<maven.compiler.target>11</maven.compiler.target>
+		<ver.bioformats>6.10.0</ver.bioformats>
+	</properties>
+	<dependencies>
+            <dependency>
+		<groupId>ome</groupId>
+		<artifactId>formats-gpl</artifactId>
+		<version>${ver.bioformats}</version>
+		<scope>compile</scope>
+                <exclusions>
+                    <exclusion>
+                        <groupId>edu.ucar</groupId>
+                        <artifactId>cdm-core</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+	</dependencies>
+	<build>
+            <plugins>
+		<plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>3.3.0</version>
+                    <configuration>
+                        <shadedArtifactAttached>false</shadedArtifactAttached>
+                        <transformers>
+                            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                <mainClass>edu.stonybrook.bmi.hatch.X2TIF</mainClass>
+                            </transformer>
+                            <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                            <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                                <addHeader>false</addHeader>
+                            </transformer>
+                        </transformers>
+                        <filters>
+                            <filter>
+                                <artifact>*:*</artifact>
+                                <excludes>
+                                    <exclude>META-INF/*.SF</exclude>
+                                    <exclude>META-INF/*.DSA</exclude>
+                                    <exclude>META-INF/*.RSA</exclude>
+                                </excludes>
+                            </filter>
+                        </filters>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <phase>package</phase>
+                                <goals>
+                                    <goal>shade</goal>
+                                </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+            <resources>
+                <resource>
+                    <filtering>false</filtering>
+                    <directory>src/main/resources</directory>
+                </resource>
+                <resource>
+                    <filtering>false</filtering>
+                    <directory>src/main/java</directory>
+                    <includes>
+                        <include>**</include>
+                    </includes>
+                    <excludes>
+                        <exclude>**/*.java</exclude>
+                    </excludes>
+                </resource>
+            </resources>
+	</build>
+	<repositories>
+            <repository>
+                <id>central</id>
+		<name>Central Repository</name>
+		<url>https://repo.maven.apache.org/maven2</url>
+            </repository>
+            <repository>
+		<id>ome</id>
+		<name>OME Artifactory</name>
+		<url>https://artifacts.openmicroscopy.org/artifactory/maven/</url>
+            </repository>
+	</repositories>
 </project>

@@ -1,5 +1,8 @@
 [
 {
+  "name":"[Lsun.java2d.loops.GraphicsPrimitive;"
+},
+{
   "name":"com.sun.imageio.plugins.jpeg.JPEGImageReader",
   "methods":[
     {"name":"acceptPixels","parameterTypes":["int","boolean"] }, 
@@ -41,7 +44,6 @@
 },
 {
   "name":"java.awt.Color",
-  "fields":[{"name":"value"}],
   "methods":[{"name":"getRGB","parameterTypes":[] }]
 },
 {
@@ -49,44 +51,80 @@
   "fields":[
     {"name":"appContext"}, 
     {"name":"background"}, 
+    {"name":"cursor"}, 
+    {"name":"enabled"}, 
+    {"name":"focusable"}, 
     {"name":"foreground"}, 
     {"name":"graphicsConfig"}, 
     {"name":"height"}, 
-    {"name":"isPacked"}, 
-    {"name":"name"}, 
+    {"name":"parent"}, 
     {"name":"peer"}, 
+    {"name":"visible"}, 
     {"name":"width"}, 
     {"name":"x"}, 
     {"name":"y"}
   ],
   "methods":[
+    {"name":"getFont_NoClientCode","parameterTypes":[] }, 
     {"name":"getLocationOnScreen_NoTreeLock","parameterTypes":[] }, 
-    {"name":"getParent_NoClientCode","parameterTypes":[] }
+    {"name":"getToolkitImpl","parameterTypes":[] }, 
+    {"name":"isEnabledImpl","parameterTypes":[] }
+  ]
+},
+{
+  "name":"java.awt.Container",
+  "fields":[{"name":"layoutMgr"}]
+},
+{
+  "name":"java.awt.Dimension",
+  "fields":[
+    {"name":"height"}, 
+    {"name":"width"}
   ]
 },
 {
   "name":"java.awt.Font",
   "fields":[
+    {"name":"name"}, 
     {"name":"pData"}, 
     {"name":"size"}, 
     {"name":"style"}
   ],
   "methods":[
-    {"name":"getFamily_NoClientCode","parameterTypes":[] }, 
+    {"name":"getFont","parameterTypes":["java.lang.String"] }, 
     {"name":"getFontPeer","parameterTypes":[] }
   ]
 },
 {
-  "name":"java.awt.event.InputEvent",
-  "fields":[{"name":"modifiers"}]
+  "name":"java.awt.Insets",
+  "fields":[
+    {"name":"bottom"}, 
+    {"name":"left"}, 
+    {"name":"right"}, 
+    {"name":"top"}
+  ],
+  "methods":[{"name":"<init>","parameterTypes":["int","int","int","int"] }]
 },
 {
-  "name":"java.awt.event.KeyEvent",
-  "fields":[
-    {"name":"isProxyActive"}, 
-    {"name":"keyChar"}, 
-    {"name":"keyCode"}
+  "name":"java.awt.Toolkit",
+  "methods":[
+    {"name":"getDefaultToolkit","parameterTypes":[] }, 
+    {"name":"getFontMetrics","parameterTypes":["java.awt.Font"] }
   ]
+},
+{
+  "name":"java.awt.desktop.UserSessionEvent$Reason",
+  "fields":[
+    {"name":"CONSOLE"}, 
+    {"name":"LOCK"}, 
+    {"name":"REMOTE"}, 
+    {"name":"UNSPECIFIED"}
+  ]
+},
+{
+  "name":"java.awt.event.InputEvent",
+  "fields":[{"name":"modifiers"}],
+  "methods":[{"name":"getButtonDownMasks","parameterTypes":[] }]
 },
 {
   "name":"java.awt.geom.AffineTransform",
@@ -190,11 +228,8 @@
   ]
 },
 {
-  "name":"java.lang.ClassLoader",
-  "methods":[
-    {"name":"getPlatformClassLoader","parameterTypes":[] }, 
-    {"name":"loadClass","parameterTypes":["java.lang.String"] }
-  ]
+  "name":"java.lang.Boolean",
+  "methods":[{"name":"getBoolean","parameterTypes":["java.lang.String"] }]
 },
 {
   "name":"javax.imageio.plugins.jpeg.JPEGHuffmanTable",
@@ -208,29 +243,12 @@
   "fields":[{"name":"qTable"}]
 },
 {
-  "name":"jdk.internal.loader.ClassLoaders$PlatformClassLoader"
-},
-{
-  "name":"org.graalvm.nativebridge.jni.JNIExceptionWrapperEntryPoints",
-  "methods":[{"name":"getClassName","parameterTypes":["java.lang.Class"] }]
-},
-{
   "name":"sun.awt.SunHints",
   "fields":[{"name":"INTVAL_STROKE_PURE"}]
 },
 {
-  "name":"sun.awt.SunToolkit",
-  "methods":[
-    {"name":"awtLock","parameterTypes":[] }, 
-    {"name":"awtLockNotify","parameterTypes":[] }, 
-    {"name":"awtLockNotifyAll","parameterTypes":[] }, 
-    {"name":"awtLockWait","parameterTypes":["long"] }, 
-    {"name":"awtUnlock","parameterTypes":[] }
-  ]
-},
-{
-  "name":"sun.awt.X11.XErrorHandlerUtil",
-  "methods":[{"name":"init","parameterTypes":["long"] }]
+  "name":"sun.awt.Win32GraphicsEnvironment",
+  "methods":[{"name":"dwmCompositionChanged","parameterTypes":["boolean"] }]
 },
 {
   "name":"sun.awt.image.BufImgSurfaceData$ICMColorData",
@@ -275,6 +293,50 @@
     {"name":"pixelStride"}, 
     {"name":"scanlineStride"}, 
     {"name":"type"}
+  ]
+},
+{
+  "name":"sun.awt.image.SunVolatileImage",
+  "fields":[{"name":"volSurfaceManager"}]
+},
+{
+  "name":"sun.awt.image.VolatileSurfaceManager",
+  "fields":[{"name":"sdCurrent"}]
+},
+{
+  "name":"sun.awt.windows.WComponentPeer",
+  "fields":[
+    {"name":"hwnd"}, 
+    {"name":"winGraphicsConfig"}
+  ],
+  "methods":[
+    {"name":"disposeLater","parameterTypes":[] }, 
+    {"name":"replaceSurfaceData","parameterTypes":[] }, 
+    {"name":"replaceSurfaceDataLater","parameterTypes":[] }
+  ]
+},
+{
+  "name":"sun.awt.windows.WDesktopPeer",
+  "methods":[
+    {"name":"systemSleepCallback","parameterTypes":["boolean"] }, 
+    {"name":"userSessionCallback","parameterTypes":["boolean","java.awt.desktop.UserSessionEvent$Reason"] }
+  ]
+},
+{
+  "name":"sun.awt.windows.WObjectPeer",
+  "fields":[
+    {"name":"createError"}, 
+    {"name":"destroyed"}, 
+    {"name":"pData"}, 
+    {"name":"target"}
+  ],
+  "methods":[{"name":"getPeerForTarget","parameterTypes":["java.lang.Object"] }]
+},
+{
+  "name":"sun.awt.windows.WToolkit",
+  "methods":[
+    {"name":"displayChanged","parameterTypes":[] }, 
+    {"name":"windowsSettingChange","parameterTypes":[] }
   ]
 },
 {
@@ -381,9 +443,6 @@
   "methods":[{"name":"register","parameterTypes":["sun.java2d.loops.GraphicsPrimitive[]"] }]
 },
 {
-  "name":"sun.java2d.loops.GraphicsPrimitive[]"
-},
-{
   "name":"sun.java2d.loops.MaskBlit",
   "methods":[{"name":"<init>","parameterTypes":["long","sun.java2d.loops.SurfaceType","sun.java2d.loops.CompositeType","sun.java2d.loops.SurfaceType"] }]
 },
@@ -462,10 +521,12 @@
   ]
 },
 {
-  "name":"sun.java2d.xr.XRSurfaceData",
+  "name":"sun.java2d.windows.WindowsFlags",
   "fields":[
-    {"name":"picture"}, 
-    {"name":"xid"}
+    {"name":"d3dEnabled"}, 
+    {"name":"d3dSet"}, 
+    {"name":"offscreenSharingEnabled"}, 
+    {"name":"setHighDPIAware"}
   ]
 }
 ]

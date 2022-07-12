@@ -33,7 +33,7 @@ public class NeoJPEGCodec extends BaseCodec {
     public byte[] compress(byte[] data, CodecOptions options) throws FormatException {
         //System.out.println("custom");
         options.channels = 3;
-        BufferedImage bi = AWTImageTools.makeImage(data, options.width,options.height, options.channels, options.interleaved,options.bitsPerSample / 8, false, options.littleEndian, options.signed);
+        BufferedImage bi = AWTImageTools.makeImage(data, options.width,options.height, options.channels, options.interleaved, options.bitsPerSample / 8, false, options.littleEndian, options.signed);
         //System.out.println("MODEL : "+bi.getType());
         ImageWriter jpgWriter = (ImageWriter) ImageIO.getImageWritersByFormatName("jpg").next();
         ImageWriteParam param = jpgWriter.getDefaultWriteParam();
@@ -78,6 +78,7 @@ public class NeoJPEGCodec extends BaseCodec {
 
     int nPixels = b.getWidth() * b.getHeight();
     WritableRaster r = (WritableRaster) b.getRaster();
+    //options.ycbcr = true;
     if (!options.ycbcr && r.getDataBuffer() instanceof DataBufferByte && b.getType() == BufferedImage.TYPE_BYTE_GRAY) {
       DataBufferByte bb = (DataBufferByte) r.getDataBuffer();
 
