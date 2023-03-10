@@ -196,7 +196,6 @@ public class TiffWriter extends FormatWriter {
       ifd.put(new Integer(IFD.TILE_LENGTH), new Long(currentTileSizeY));
     }
     if (usingTiling && (currentTileSizeX < w || currentTileSizeY < h)) {
-        System.out.println("ARRRGH");
       int numTilesX = (w + (x % currentTileSizeX) + currentTileSizeX - 1) / currentTileSizeX;
       int numTilesY = (h + (y % currentTileSizeY) + currentTileSizeY - 1) / currentTileSizeY;
       for (int yTileIndex = 0; yTileIndex < numTilesY; yTileIndex++) {
@@ -218,7 +217,6 @@ public class TiffWriter extends FormatWriter {
               }
             }
           }
-
           boolean lastPlane = no == getPlaneCount() - 1;
           boolean lastSeries = getSeries() == retrieve.getImageCount() - 1;
           boolean lastResolution = getResolution() == getResolutionCount() - 1;

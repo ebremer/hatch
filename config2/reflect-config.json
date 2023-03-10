@@ -1,0 +1,142 @@
+[
+{
+  "name":"java.awt.image.AffineTransformOp"
+},
+{
+  "name":"java.awt.image.ConvolveOp"
+},
+{
+  "name":"java.awt.image.LookupOp"
+},
+{
+  "name":"java.security.SecureRandomParameters"
+},
+{
+  "name":"javax.imageio.spi.ImageReaderSpi"
+},
+{
+  "name":"javax.imageio.spi.ImageReaderWriterSpi",
+  "methods":[
+    {"name":"getFileSuffixes","parameterTypes":[] }, 
+    {"name":"getFormatNames","parameterTypes":[] }, 
+    {"name":"getMIMETypes","parameterTypes":[] }
+  ]
+},
+{
+  "name":"javax.imageio.spi.ImageWriterSpi"
+},
+{
+  "name":"loci.common.Log4jTools",
+  "methods":[{"name":"setRootLevel","parameterTypes":["java.lang.String"] }]
+},
+{
+  "name":"loci.common.LogbackTools"
+},
+{
+  "name":"loci.common.services.S3ClientService"
+},
+{
+  "name":"loci.common.services.S3ClientServiceImpl"
+},
+{
+  "name":"loci.formats.services.EXIFService"
+},
+{
+  "name":"loci.formats.services.EXIFServiceImpl"
+},
+{
+  "name":"loci.formats.services.JAIIIOService"
+},
+{
+  "name":"loci.formats.services.JAIIIOServiceImpl"
+},
+{
+  "name":"loci.formats.services.JHDFService"
+},
+{
+  "name":"loci.formats.services.JHDFServiceImpl"
+},
+{
+  "name":"loci.formats.services.JPEGTurboService"
+},
+{
+  "name":"loci.formats.services.JPEGTurboServiceImpl"
+},
+{
+  "name":"loci.formats.services.JPEGXRService"
+},
+{
+  "name":"loci.formats.services.JPEGXRServiceImpl"
+},
+{
+  "name":"loci.formats.services.LuraWaveService"
+},
+{
+  "name":"loci.formats.services.LuraWaveServiceImpl"
+},
+{
+  "name":"loci.formats.services.MDBService"
+},
+{
+  "name":"loci.formats.services.MDBServiceImpl"
+},
+{
+  "name":"loci.formats.services.MetakitService"
+},
+{
+  "name":"loci.formats.services.MetakitServiceImpl"
+},
+{
+  "name":"loci.formats.services.NetCDFService"
+},
+{
+  "name":"loci.formats.services.NetCDFServiceImpl"
+},
+{
+  "name":"loci.formats.services.OMEXMLService"
+},
+{
+  "name":"loci.formats.services.OMEXMLServiceImpl",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"loci.formats.services.POIService"
+},
+{
+  "name":"loci.formats.services.POIServiceImpl"
+},
+{
+  "name":"loci.formats.services.WlzService"
+},
+{
+  "name":"loci.formats.services.WlzServiceImpl"
+},
+{
+  "name":"ome.codecs.services.JAIIIOService"
+},
+{
+  "name":"ome.codecs.services.JAIIIOServiceImpl"
+},
+{
+  "name":"ome.codecs.services.LuraWaveService"
+},
+{
+  "name":"ome.codecs.services.LuraWaveServiceImpl"
+},
+{
+  "name":"sun.java2d.marlin.DMarlinRenderingEngine",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"sun.security.provider.DRBG",
+  "methods":[{"name":"<init>","parameterTypes":["java.security.SecureRandomParameters"] }]
+},
+{
+  "name":"sun.security.provider.SHA",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"sun.security.provider.SHA2$SHA256",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+}
+]

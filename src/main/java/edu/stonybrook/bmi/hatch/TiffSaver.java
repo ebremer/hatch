@@ -285,9 +285,6 @@ public class TiffSaver implements Closeable {
       } else {
           nStrips *= nChannels;
       }
-      
-      
-      
       stripBuf = new ByteArrayOutputStream[nStrips];
       DataOutputStream[] stripOut = new DataOutputStream[nStrips];
       for (int strip=0; strip<nStrips; strip++) {
@@ -501,10 +498,7 @@ public class TiffSaver implements Closeable {
    * @param tag IFD tag to write
    * @param value IFD value to write
    */
-  public void writeIFDValue(RandomAccessOutputStream extraOut, long offset,
-    int tag, Object value)
-    throws FormatException, IOException
-  {
+  public void writeIFDValue(RandomAccessOutputStream extraOut, long offset, int tag, Object value) throws FormatException, IOException {
     extraOut.order(isLittleEndian());
 
     // convert singleton objects into arrays, for simplicity
@@ -705,7 +699,7 @@ public class TiffSaver implements Closeable {
       throw new FormatException("Invalid TIFF header");
     }
 
-    boolean little = valid.booleanValue();
+    boolean little = valid;
     boolean bigTiff = parser.isBigTiff();
 
     setLittleEndian(little);
@@ -713,8 +707,7 @@ public class TiffSaver implements Closeable {
 
     long offset = bigTiff ? 8 : 4; // offset to the IFD
 
-    int bytesPerEntry = bigTiff ?
-      TiffConstants.BIG_TIFF_BYTES_PER_ENTRY : TiffConstants.BYTES_PER_ENTRY;
+    //int bytesPerEntry = bigTiff ? TiffConstants.BIG_TIFF_BYTES_PER_ENTRY : TiffConstants.BYTES_PER_ENTRY;
 
     raf.seek(offset);
 
@@ -960,7 +953,7 @@ public class TiffSaver implements Closeable {
         //System.out.println("PHOTOMETRIC_INTERPRETATION : "+pi);
         ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, pi.getCode());
     }
-    //ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, 6);
+    ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, 6);
 
     ifd.putIFDValue(IFD.SAMPLES_PER_PIXEL, nChannels);
 /*
