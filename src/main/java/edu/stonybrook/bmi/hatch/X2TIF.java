@@ -25,7 +25,6 @@ import loci.formats.meta.MetadataRetrieve;
 import loci.formats.ome.OMEPyramidStore;
 import loci.formats.services.OMEXMLService;
 import loci.formats.tiff.IFD;
-import loci.formats.tiff.OnDemandLongArray;
 import loci.formats.tiff.PhotoInterp;
 import loci.formats.tiff.TiffRational;
 import ome.units.UNITS;
@@ -50,14 +49,15 @@ public class X2TIF {
     private Pyramid pyramid;
     private OMETiffWriter writer;
     private boolean verbose = false;
-    private StopWatch time;
+    private final StopWatch time;
     private int depth;
     private Length ppx;
     private Length ppy;
     private TiffRational px;
     private TiffRational py;
     private int TileSize;
-    public static String software = "hatch 2.0.0 by Wing-n-Beak";
+    private IMetadata meta;
+    public static String software = "hatch 2.1.0 by Wing-n-Beak";
     
     public X2TIF() {
         time = new StopWatch();
@@ -85,12 +85,11 @@ public class X2TIF {
     
     private void SetupWriter() {
         writer = new OMETiffWriter();
-        OnDemandLongArray asa;
         ServiceFactory factory;
         try {
             factory = new ServiceFactory();
             OMEXMLService service = factory.getInstance(OMEXMLService.class);
-            IMetadata meta = service.createOMEXMLMetadata();
+            meta = service.createOMEXMLMetadata();
             int i=0;
             meta.setImageID("Image:"+i,i);
             meta.setPixelsID("Pixels:"+i,i);
@@ -111,14 +110,28 @@ public class X2TIF {
             int w = width;
             int h = height;
             for (int j=1; j<depth; j++) {
-                int cx = ((w%(2*tileSizeX))==1) ? 1 : 0;
-                int cy = ((h%(2*tileSizeY))==1) ? 1 : 0;
-                w = (w / 2) - cx;
-                h = (h / 2) - cy;
+                //int cx = ((w%(2*tileSizeX))==1) ? 1 : 0;
+                //int cy = ((h%(2*tileSizeX))==1) ? 1 : 0;
+                //w = (w / 2) - cx;
+                //h = (h / 2) - cy;
+                int wholenumxtiles = w/(2*tileSizeX);
+                int wholenumytiles = h/(2*tileSizeY);
+                //int numxtiles = Math.round(w/(2*tileSizeX));
+                //int numytiles = Math.round(h/(2*tileSizeY));
+                int fractionx = w - (wholenumxtiles*tileSizeX*2);
+                int fractiony = h - (wholenumytiles*tileSizeY*2);
+                if (fractionx==1) {
+                    w = wholenumxtiles * tileSizeX;
+                } else {
+                    w = wholenumxtiles * tileSizeX + (fractionx/2);
+                }
+                if (fractiony==1) {
+                    h = wholenumytiles * tileSizeY;
+                } else {
+                    h = wholenumytiles * tileSizeY + (fractiony/2);
+                }
                 if (verbose) {
-                    if (cx==1) System.out.println("clip x");
-                    if (cy==1) System.out.println("clip y");
-                    System.out.println("Pyramid : "+w+" "+ h +" "+Math.ceil(w/512)+" "+Math.ceil(h/512));
+                    System.out.println("Pyramid : "+w+" "+ h +" "+((int) (1+ Math.ceil(w/tileSizeX)))+" "+((int) (1+ Math.ceil(h/tileSizeX))));
                 }
                 ((OMEPyramidStore) meta).setResolutionSizeX(new PositiveInteger(w), 0, j);
                 ((OMEPyramidStore) meta).setResolutionSizeY(new PositiveInteger(h), 0, j);
@@ -174,7 +187,9 @@ public class X2TIF {
                 System.out.println("Compression  : "+reader.metadata.get("Compression"));
             }
             try {
-                if (reader.metadata.get("Compression")=="JPEG-2000") {
+                if (reader.metadata.get("Compression")==null) {
+                    System.out.println("NULL compression specified...trying JPEG...no promises...");
+                } else if (reader.metadata.get("Compression")!="JPEG") {
                     throw new Error("Hatch can only convert images that have JPEG compression.");
                 }
             } catch (Error e){
@@ -185,10 +200,10 @@ public class X2TIF {
             if (dest.exists()) {
                 dest.delete();
             }
-            int size = Math.min(width, height);
+            int size = Math.max(width, height);
             int ss = (int) Math.ceil(Math.log(size)/Math.log(2));
             int tiless = (int) Math.ceil(Math.log(tileSizeX)/Math.log(2));
-            depth = ss-tiless;
+            depth = ss-tiless+2;
             TileSize = reader.getOptimalTileHeight() * reader.getOptimalTileWidth() * 24;
             if (verbose) {
                 System.out.println("# of scales to be generated : "+depth);
@@ -310,21 +325,22 @@ public class X2TIF {
             }
         }
         if (verbose) {
-            time.Lapse();
+            time.Cumulative();
             System.out.println("Generate image pyramid...");
         }
-        StopWatch sw = new StopWatch();
-        sw.reset();
         for (int s=1;s<depth;s++) {
             if (verbose) {
                 System.out.println("Level : "+s+" of "+depth);
             }
+            System.out.println("Lump...");
             pyramid.Lump();
-            pyramid.Shrink(0.5f);
-            sw.Cumulative();
-            sw.Lap();
-            sw.Lapse();
+            time.Lap();
+            System.out.println("Shrink...");
+            pyramid.Shrink();
+            time.Lap();
+            time.Cumulative();
             System.out.println(pyramid.gettilesX()+" X "+pyramid.gettilesY());
+            System.out.println("Resolution S="+s+" "+pyramid.getWidth()+"x"+pyramid.getHeight());
             writer.setSeries(0);
             writer.setResolution(s);
             if (verbose) {
@@ -334,8 +350,6 @@ public class X2TIF {
                 for (int x=0; x<pyramid.gettilesX(); x++) {
                     byte[] b = pyramid.GetImageBytes(x, y);
                     IFD ifd = new IFD();
-                    int tw = pyramid.getBufferedImage(x,y).getWidth();
-                    int th = pyramid.getBufferedImage(x,y).getHeight();
                     ifd.put(IFD.RESOLUTION_UNIT, 3);
                     ifd.put(IFD.X_RESOLUTION, px);
                     ifd.put(IFD.Y_RESOLUTION, py);
@@ -349,7 +363,9 @@ public class X2TIF {
                     ImageIO.write(bi, "jpg", baos);
                     byte[] raw = baos.toByteArray();
                     //byte[] raw = ((DataBufferByte)bi.getRaster().getDataBuffer()).getData();
-                    writer.saveBytes(0, raw, ifd, x*tileSizeX, y*tileSizeY, tw, th);
+                    //System.out.println("Writing Pyramid Tile : "+x+" "+y+" "+tw+" "+th);
+                    //writer.saveBytes(0, raw, ifd, x*tileSizeX, y*tileSizeY, tw, th);
+                    writer.saveBytes(0, raw, ifd, x*tileSizeX, y*tileSizeY, tileSizeX, tileSizeY);
                     //pyramid.Dump2File(raw, x, y);
                 }
             }
@@ -374,12 +390,11 @@ public class X2TIF {
         initialize();
         try {
             readWriteTiles();
-            time.Lapse();
+            time.Cumulative();
         } catch(IOException | FormatException e) {
             System.err.println(e.toString());
         }
     }
-    
 
     public static void main(String[] args) {
         loci.common.DebugTools.setRootLevel("WARN");
