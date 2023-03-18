@@ -125,6 +125,20 @@
                 <goals>
                   <goal>build</goal>
                 </goals>
+                <configuration>
+                  <imageName>hatch</imageName>
+                  <mainClass>edu.stonybrook.bmi.hatch.X2TIF</mainClass>
+                  <debug>true</debug>
+                  <skipNativeBuild>true</skipNativeBuild>
+                  <skipNativeTests>true</skipNativeTests>
+                  <verbose>true</verbose>
+                  <buildArgs>
+                    <buildArg>--no-fallback</buildArg>
+                    <buildArg>-H:ConfigurationFileDirectories=config</buildArg>
+                    <buildArg>--enable-url-protocols=https</buildArg>
+                    <buildArg>-H:+AddAllCharsets</buildArg>
+                  </buildArgs>
+                </configuration>
               </execution>
             </executions>
             <configuration>
