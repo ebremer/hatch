@@ -1,9 +1,9 @@
 [
 {
-  "name":"[[J"
+  "name":"[[I"
 },
 {
-  "name":"[[Lloci.formats.tiff.TiffRational;"
+  "name":"[[J"
 },
 {
   "name":"java.awt.image.AffineTransformOp"
@@ -15,41 +15,16 @@
   "name":"java.awt.image.LookupOp"
 },
 {
-  "name":"java.io.FilePermission"
-},
-{
-  "name":"java.lang.RuntimePermission"
-},
-{
-  "name":"java.net.NetPermission"
-},
-{
-  "name":"java.net.SocketPermission"
-},
-{
-  "name":"java.net.URLPermission",
-  "methods":[{"name":"<init>","parameterTypes":["java.lang.String","java.lang.String"] }]
-},
-{
-  "name":"java.security.AllPermission"
-},
-{
   "name":"java.security.SecureRandomParameters"
-},
-{
-  "name":"java.security.SecurityPermission"
-},
-{
-  "name":"java.util.PropertyPermission"
 },
 {
   "name":"javax.imageio.spi.ImageReaderSpi"
 },
 {
   "name":"javax.imageio.spi.ImageReaderWriterSpi",
-  "methods":[{"name":"getFormatNames","parameterTypes":[] }],
-  "queriedMethods":[
+  "methods":[
     {"name":"getFileSuffixes","parameterTypes":[] }, 
+    {"name":"getFormatNames","parameterTypes":[] }, 
     {"name":"getMIMETypes","parameterTypes":[] }
   ]
 },
@@ -57,8 +32,14 @@
   "name":"javax.imageio.spi.ImageWriterSpi"
 },
 {
-  "name":"loci.common.LogbackTools",
+  "name":"loci.common.Log4jTools",
   "methods":[{"name":"setRootLevel","parameterTypes":["java.lang.String"] }]
+},
+{
+  "name":"[Lloci.formats.tiff.OnDemandLongArray;"
+},
+{
+  "name":"loci.common.LogbackTools"
 },
 {
   "name":"loci.common.services.S3ClientService"
