@@ -1,6 +1,7 @@
 package edu.stonybrook.bmi.hatch;
 
 import com.beust.jcommander.JCommander;
+import com.beust.jcommander.ParameterException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -78,11 +79,12 @@ public class Hatch {
         HatchParameters params = new HatchParameters();
         JCommander jc = JCommander.newBuilder().addObject(params).build();
         jc.setProgramName(Hatch.software+"\nhatch");    
-        jc.parse(args);
-        if (args.length==0) {
-            jc.usage();
-        } else {
-            if (params.src.exists()) {
+        try {
+            jc.parse(args);
+            if (params.isHelp()) {
+                jc.usage();
+                System.exit(0);
+            } else if (params.src.exists()) {
                 if (params.src.isDirectory()) {
                     System.out.println(params.src+" is directory");
                     if (!params.dest.exists()) {
@@ -117,7 +119,9 @@ public class Hatch {
                 }
             } else {
                 System.out.println(params.src.toString()+" does not exist!");
-            }
+            }  
+        } catch (ParameterException ex) {
+            System.out.println(ex.getMessage());
         }
     }
 }

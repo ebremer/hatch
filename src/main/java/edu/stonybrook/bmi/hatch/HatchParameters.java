@@ -10,13 +10,17 @@ import java.util.List;
  * @author erich
  */
 public class HatchParameters {
-    @Parameter(names = "-help", help = true)
-    public boolean help;
+    @Parameter(names = {"-help","-h"}, help = true)
+    private boolean help;
     
-    @Parameter(names = "-src", description = "Source Folder or File")
+    public boolean isHelp() {
+        return help;
+    }
+    
+    @Parameter(names = "-src", description = "Source Folder or File", required = true)
     public File src;
 
-    @Parameter(names = "-dest", description = "Destination Folder or File")
+    @Parameter(names = "-dest", description = "Destination Folder or File", required = true)
     public File dest;  
     
     @Parameter(names = "-fp", description = "# of file processors")
