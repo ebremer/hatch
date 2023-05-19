@@ -95,11 +95,6 @@ public abstract class BaseTiffReader extends MinimalTiffReader {
     initStandardMetadata();
     initMetadataStore();
   }
-  
-  @Override
-  public IFDList getIFDs() {
-      return ifds;
-  }
 
   /**
    * Parses standard metadata.

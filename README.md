@@ -1,4 +1,4 @@
-# Hatch 3.0.0
+# Hatch
 
 This tool converts the largest image in a VSI, SVS, or TIF image into a new TIFF image with a freshly created image pyramid with each scaling 1/2 dimensions each scale.
 
@@ -12,16 +12,15 @@ Features:
 
 Usage:
 ```
-hatch -src <src> -dest <dest>
-
-or see
-
-hatch -help
+hatch <src> <dest>
 ```
 
 Credits and Acknowledgements:
 Many of the core files are modified files from the OME Bioformats Projects (https://github.com/ome/bioformats) such as (but not limited to):
 CellSensReader
+OMETiffWriter
 TiffCompression
 TiffParser
+TiffSaver
+TiffWriter
 

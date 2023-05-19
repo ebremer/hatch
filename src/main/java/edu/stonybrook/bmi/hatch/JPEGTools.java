@@ -2,10 +2,12 @@ package edu.stonybrook.bmi.hatch;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -40,18 +42,17 @@ public class JPEGTools {
   //  }
 
     public static byte[] FindFirstEOI(RandomAccessInputStream ets, byte[] r) throws IOException {
-        int c = 0;
+        int c=0;
         long begin = ets.getFilePointer();
         //System.out.println(r.length+" FindFirstEOI : "+begin+" "+ets.isLittleEndian()+" "+ets.length());
         r[0] = ets.readByte();
         while(ets.getFilePointer()<ets.length()) {
             c++;
             r[c] = ets.readByte();
-            //System.out.print(String.format("%02x",r[c])+" ");
             if (Byte.compare(r[c-1],FF)==0) {
                 if (Byte.compare(r[c],D9)==0) {
                     ets.seek(begin);
-                    return Arrays.copyOf(r, c+1);
+                    return Arrays.copyOf(r, c);
                 }
             }
         }
@@ -80,9 +81,9 @@ public class JPEGTools {
         
     public static void split2433443343(byte[] buf, int c) {
         try {
-            try (FileOutputStream fos = new FileOutputStream("/vsi/RAH-"+c+".jpg")) {
-                fos.write(buf);
-            }
+            FileOutputStream fos = new FileOutputStream("/vsi/RAH-"+c+".jpg");
+            fos.write(buf);
+            fos.close();
         } catch (FileNotFoundException ex) {
             Logger.getLogger(JPEGTools.class.getName()).log(Level.SEVERE, null, ex);
         } catch (IOException ex) {

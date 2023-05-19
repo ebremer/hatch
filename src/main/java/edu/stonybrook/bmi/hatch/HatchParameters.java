@@ -27,7 +27,7 @@ public class HatchParameters {
     public int fp = 1;  
 
     @Parameter(names = "-cores", description = "# of cores for processing")
-    public int cores = Runtime.getRuntime().availableProcessors();
+    public int cores = 1;  
     
     @Parameter
     public List<String> parameters = Lists.newArrayList();
@@ -37,7 +37,4 @@ public class HatchParameters {
     
     @Parameter(names = "-meta")
     public boolean meta = false;
-
-    @Parameter(names = "-jp2", hidden = true)
-    public boolean jp2 = false;
 }

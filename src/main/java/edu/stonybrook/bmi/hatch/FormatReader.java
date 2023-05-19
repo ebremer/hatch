@@ -66,7 +66,6 @@ import loci.formats.meta.MetadataStore;
 import loci.formats.ome.OMEXMLMetadata;
 import loci.formats.services.OMEXMLService;
 import loci.formats.tiff.IFD;
-import loci.formats.tiff.IFDList;
 import ome.xml.model.AffineTransform;
 import ome.xml.model.enums.AcquisitionMode;
 import ome.xml.model.enums.ArcType;
@@ -197,10 +196,10 @@ public abstract class FormatReader extends FormatHandler
   }
 
   /**
-   * Initializes the given file (parsing header information, etc.).Most subclasses should override this method to perform
- initialization operations such as parsing metadata.
+   * Initializes the given file (parsing header information, etc.).
+   * Most subclasses should override this method to perform
+   * initialization operations such as parsing metadata.
    *
-     * @param id
    * @throws FormatException if a parsing error occurs processing the file.
    * @throws IOException if an I/O error occurs processing the file
    */
@@ -212,13 +211,14 @@ public abstract class FormatReader extends FormatHandler
         if (id.equals(s[i])) return;
       }
     }
+
     coreIndex = 0;
     series = 0;
     close();
     currentId = id;
-    metadata = new Hashtable<>();
+    metadata = new Hashtable<String, Object>();
 
-    core = new ArrayList<>();
+    core = new ArrayList<CoreMetadata>();
     CoreMetadata core0 = new CoreMetadata();
     core.add(core0);
     core0.orderCertain = true;
@@ -236,10 +236,9 @@ public abstract class FormatReader extends FormatHandler
     }
   }
 
-  /** Returns the list of available metadata options.
-     * @return  */
+  /** Returns the list of available metadata options. */
   protected ArrayList<String> getAvailableOptions() {
-    ArrayList<String> optionsList = new ArrayList<>();
+    ArrayList<String> optionsList = new ArrayList<String>();
     optionsList.add(DynamicMetadataOptions.METADATA_LEVEL_KEY);
     optionsList.add(DynamicMetadataOptions.READER_VALIDATE_KEY);
     return optionsList;
@@ -257,14 +256,22 @@ public abstract class FormatReader extends FormatHandler
   }
 
   /** Adds an entry to the specified Hashtable. */
-  protected void addMeta(String key, Object value, Hashtable<String, Object> meta) {
-    if (key == null || value == null || getMetadataOptions().getMetadataLevel() == MetadataLevel.MINIMUM) {
+  protected void addMeta(String key, Object value,
+    Hashtable<String, Object> meta)
+  {
+    if (key == null || value == null ||
+      getMetadataOptions().getMetadataLevel() == MetadataLevel.MINIMUM)
+    {
       return;
     }
+
     key = key.trim();
+
     boolean string = value instanceof String || value instanceof Character;
+
     // string value, if passed in value is a string
     String val = string ? String.valueOf(value) : null;
+
     if (filterMetadata ||
       (saveOriginalMetadata && (getMetadataStore() instanceof OMEXMLMetadata)))
     {
@@ -1836,5 +1843,5 @@ public abstract class FormatReader extends FormatHandler
   public abstract byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col);
   public abstract byte[] getRawBytes(IFD ifd, int no, int row, int col);
   public abstract byte[] getDecodedTile(byte[] rawbuffer, int no, int row, int col);
-  public abstract IFDList getIFDs();
+
 }

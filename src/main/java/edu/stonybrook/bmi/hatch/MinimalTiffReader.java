@@ -355,15 +355,6 @@ public class MinimalTiffReader extends SubResolutionFormatReader {
   }
 
   /**
-     * @param no
-     * @param buf
-     * @param x
-     * @param y
-     * @param w
-     * @param h
-     * @return 
-     * @throws loci.formats.FormatException
-     * @throws java.io.IOException
    * @see loci.formats.FormatReader#openBytes(int, byte[], int, int, int, int)
    */
   @Override
