@@ -37,7 +37,7 @@ public class Pyramid {
     private final int tileSizeX;
     private final int tileSizeY;
     private int xscale = 0;
-    public static float CompressionSize = 0.70f;
+    public static float CompressionSize = 0.80f;
     public static float DownScale = 0.5f;
     private int width;
     private int height;
