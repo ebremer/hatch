@@ -172,13 +172,13 @@ public class X2TIF implements AutoCloseable {
         xmp.setMagnification(FindMagnification());
         xmp.setSizePerPixelXinMM((1d/((px.doubleValue()/10d)/1000d))/1000d);
         xmp.setSizePerPixelYinMM((1d/((py.doubleValue()/10d)/1000d))/1000d);
-        //writer.setXMP(xmp);
     }
     
     private Double FindMagnification() {
         var mx = (OMEPyramidStore) reader.getMetadataStore();
+       
         try {
-            String objectiveID = mx.getObjectiveSettingsID(0);
+            String objectiveID = mx.getObjectiveSettingsID(maximage);
             int instrument = -1;
             int objective = -1;	
             int numberOfInstruments = mx.getInstrumentCount();
