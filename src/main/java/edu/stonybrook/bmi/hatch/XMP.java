@@ -89,20 +89,13 @@ public class XMP {
             .base(uuid)
             .output(os);
         builder.build();
-        builder = RDFWriterBuilder.create();
-         builder
-            .source(m)
-            .lang(Lang.RDFXML)
-            .base(uuid)
-            .output(System.out);
-        builder.build();
         return os.toByteArray();
     }
     
     public String getXMPString() {
         String packet = new String(getXMP(),StandardCharsets.UTF_8);
         packet = "<?xpacket begin='﻿\uFEFF' id='W5M0MpCehiHzreSzNTczkc9d'?>\n<x:xmpmeta xmlns:x='adobe:ns:meta/' x:xmptk='"+Hatch.software+"'>\n"+packet;
-        packet = packet+"</x:xmpmeta>\n"+(new String(new char[2424]).replace('\0', ' '))+"\n<?xpacket end='w'?>\n";
+        packet = packet+"</x:xmpmeta>\n"+(new String(new char[2424]).replace('\0', ' '))+"\n<?xpacket end='w'?>";
         return packet;
     }
     
