@@ -288,11 +288,10 @@ public class X2TIF implements AutoCloseable {
     }
     
     public short[] byte2short(byte[] byteArray) {
-        short[] shortArray = new short[byteArray.length+1];
-        for (int i = 0; i < shortArray.length-1; i++) {
+        short[] shortArray = new short[byteArray.length];
+        for (int i = 0; i < shortArray.length; i++) {
             shortArray[i] = (short) byteArray[i];
         }
-        shortArray[shortArray.length-1] = 0x00;
         return shortArray;
     }
     
