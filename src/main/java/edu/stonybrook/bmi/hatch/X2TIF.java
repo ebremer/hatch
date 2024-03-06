@@ -33,6 +33,10 @@ import ome.units.quantity.Length;
 import ome.xml.model.enums.DimensionOrder;
 import ome.xml.model.enums.PixelType;
 import ome.xml.model.primitives.PositiveInteger;
+import com.ebremer.halcyon.lib.XMP;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Map;
 
 /**
  *
@@ -169,32 +173,68 @@ public class X2TIF implements AutoCloseable {
             LOGGER.log(Level.SEVERE, "IOException : {0}  {1}", new Object[]{src, dest});
         }
         xmp = new XMP();
-        xmp.setMagnification(FindMagnification());
-        xmp.setSizePerPixelXinMM((1d/((px.doubleValue()/10d)/1000d))/1000d);
-        xmp.setSizePerPixelYinMM((1d/((py.doubleValue()/10d)/1000d))/1000d);
-        //writer.setXMP(xmp);
+        FindMeta(xmp);
     }
     
-    private Double FindMagnification() {
-        var mx = (OMEPyramidStore) reader.getMetadataStore();
-        try {
-            String objectiveID = mx.getObjectiveSettingsID(0);
-            int instrument = -1;
-            int objective = -1;	
-            int numberOfInstruments = mx.getInstrumentCount();
-            for (int ii = 0; ii < numberOfInstruments; ii++) {
-                int numObjectives = mx.getObjectiveCount(ii);
-                for (int oi = 0; 0 < numObjectives; oi++) {
-                    if (objectiveID.equals(mx.getObjectiveID(ii, oi))) {
-                        instrument = ii;
-                        objective = oi;
-                        break;
+    private void FindMeta(XMP xmp) {        
+        switch (reader) {
+            case CellSensReader r -> {
+                OMEPyramidStore mx = (OMEPyramidStore) reader.getMetadataStore();
+                try {
+                    String objectiveID = mx.getObjectiveSettingsID(maximage);
+                    int instrument = -1;
+                    int objective = -1;
+                    int numberOfInstruments = mx.getInstrumentCount();
+                    for (int ii = 0; ii < numberOfInstruments; ii++) {
+                        int numObjectives = mx.getObjectiveCount(ii);
+                        for (int oi = 0; 0 < numObjectives; oi++) {
+                            if (objectiveID.equals(mx.getObjectiveID(ii, oi))) {
+                                instrument = ii;
+                                objective = oi;
+                                break;
+                            }
+                        }
                     }
-                }	    		
+                    BigDecimal t = BigDecimal.valueOf(mx.getPlaneExposureTime(maximage, 0).value(UNITS.MILLISECOND).doubleValue());
+                    xmp.setExposureTime(t);
+                    if (instrument >= 0 ) {
+                        xmp.setMagnification(BigDecimal.valueOf(mx.getObjectiveNominalMagnification(instrument, objective)));
+                        String manu = mx.getDetectorManufacturer(instrument, objective);
+                        if (manu!=null) {
+                            xmp.setManufacturer(manu);
+                        }
+                        String model = mx.getDetectorModel(instrument, objective);
+                        if (model!=null) {
+                            xmp.setManufacturerDeviceName(model);
+                        }
+                    }
+                } catch (NullPointerException ex) {}
+                BigDecimal xpp = BigDecimal.valueOf(px.doubleValue()).divide(BigDecimal.TEN);        
+                BigDecimal ypp = BigDecimal.valueOf(py.doubleValue()).divide(BigDecimal.TEN);
+                xpp = xpp.divide(BigDecimal.valueOf(1000d));
+                ypp = ypp.divide(BigDecimal.valueOf(1000d));
+                xpp = BigDecimal.ONE.divide(xpp, 5, RoundingMode.HALF_UP);
+                ypp = BigDecimal.ONE.divide(ypp, 5, RoundingMode.HALF_UP);
+                xpp = xpp.multiply(BigDecimal.valueOf(1000d));
+                ypp = ypp.multiply(BigDecimal.valueOf(1000d));
+                xmp.setSizePerPixelXinMM(xpp);
+                xmp.setSizePerPixelYinMM(ypp);
             }
-            return (instrument < 0) ? null : mx.getObjectiveNominalMagnification(instrument, objective);
-        } catch (NullPointerException ex) {}
-        return null;
+            case SVSReader r -> {
+                Map<String,Object> list = r.getSeriesMetadata();
+                xmp.setMagnification(BigDecimal.valueOf(Double.parseDouble((String) list.get("AppMag"))));
+                xmp.setManufacturer((String) list.get("Image Description"));
+                xmp.setManufacturerDeviceName((String) list.get("ScanScope ID"));
+                Double exposuretime = Double.valueOf((String) list.get("Exposure Time"));
+                Double exposurescale = Double.valueOf((String) list.get("Exposure Scale"));
+                xmp.setExposureTime( BigDecimal.valueOf(exposuretime).multiply(BigDecimal.valueOf( exposurescale ).multiply(BigDecimal.valueOf(1000d))));
+                BigDecimal mpp = BigDecimal.valueOf(Double.parseDouble((String) list.get("MPP"))).multiply(BigDecimal.valueOf(1000000));
+                xmp.setSizePerPixelXinMM(mpp);
+                xmp.setSizePerPixelYinMM(mpp);
+                xmp.setICCColorProfile((String) list.get("ICC Profile"));
+            }
+            default -> {}
+        }
     }
     
     private int MaxImage(FormatReader reader) {
@@ -288,11 +328,10 @@ public class X2TIF implements AutoCloseable {
     }
     
     public short[] byte2short(byte[] byteArray) {
-        short[] shortArray = new short[byteArray.length+1];
-        for (int i = 0; i < shortArray.length-1; i++) {
+        short[] shortArray = new short[byteArray.length];
+        for (int i = 0; i < shortArray.length; i++) {
             shortArray[i] = (short) byteArray[i];
         }
-        shortArray[shortArray.length-1] = 0x00;
         return shortArray;
     }
     
