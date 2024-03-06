@@ -30,19 +30,13 @@ import loci.formats.tiff.PhotoInterp;
 import loci.formats.tiff.TiffRational;
 import ome.units.UNITS;
 import ome.units.quantity.Length;
-import ome.units.quantity.Time;
-import ome.units.unit.Unit;
 import ome.xml.model.enums.DimensionOrder;
 import ome.xml.model.enums.PixelType;
 import ome.xml.model.primitives.PositiveInteger;
 import com.ebremer.halcyon.lib.XMP;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.List;
 import java.util.Map;
-import ome.xml.meta.MetadataRoot;
-import ome.xml.meta.OMEXMLMetadataRoot;
-import ome.xml.model.Pixels;
 
 /**
  *
@@ -233,7 +227,7 @@ public class X2TIF implements AutoCloseable {
                 xmp.setManufacturerDeviceName((String) list.get("ScanScope ID"));
                 Double exposuretime = Double.valueOf((String) list.get("Exposure Time"));
                 Double exposurescale = Double.valueOf((String) list.get("Exposure Scale"));
-                xmp.setExposureTime( BigDecimal.valueOf(exposuretime).multiply(BigDecimal.valueOf( exposurescale ).divide(BigDecimal.valueOf(1000d))));
+                xmp.setExposureTime( BigDecimal.valueOf(exposuretime).multiply(BigDecimal.valueOf( exposurescale ).multiply(BigDecimal.valueOf(1000d))));
                 BigDecimal mpp = BigDecimal.valueOf(Double.parseDouble((String) list.get("MPP"))).multiply(BigDecimal.valueOf(1000000));
                 xmp.setSizePerPixelXinMM(mpp);
                 xmp.setSizePerPixelYinMM(mpp);
