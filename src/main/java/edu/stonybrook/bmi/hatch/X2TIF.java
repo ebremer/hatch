@@ -180,12 +180,6 @@ public class X2TIF implements AutoCloseable {
         }
         xmp = new XMP();
         FindMeta(xmp);
-        //ypp = BigDecimal.valueOf(1d).divide(ypp.divide(BigDecimal.valueOf(1000d)));
-        //xmp.setSizePerPixelXinMM(BigDecimal.valueOf(1d).divide(BigDecimal.valueOf(py.doubleValue()).divide(BigDecimal.TEN).divide(BigDecimal.valueOf(1000d))).divide(BigDecimal.valueOf(1000d)));
-        //xmp.setSizePerPixelXinMM(BigDecimal.valueOf(1d).divide(BigDecimal.valueOf(py.doubleValue()).divide(BigDecimal.TEN).divide(BigDecimal.valueOf(1000d))).divide(BigDecimal.valueOf(1000d)));
-        //xmp.setSizePerPixelXinMM(xpp);
-        //xmp.setSizePerPixelYinMM(ypp);
-        //xmp.setSizePerPixelYinMM((1d/((py.doubleValue()/10d)/1000d))/1000d);
     }
     
     private void FindMeta(XMP xmp) {        
@@ -207,9 +201,7 @@ public class X2TIF implements AutoCloseable {
                             }
                         }
                     }
-                    Time timex = mx.getPlaneExposureTime(maximage, 0);
-                    System.out.println(timex);                    
-                    BigDecimal t = BigDecimal.valueOf(timex.value(UNITS.MILLISECOND).doubleValue());
+                    BigDecimal t = BigDecimal.valueOf(mx.getPlaneExposureTime(maximage, 0).value(UNITS.MILLISECOND).doubleValue());
                     xmp.setExposureTime(t);
                     if (instrument >= 0 ) {
                         xmp.setMagnification(BigDecimal.valueOf(mx.getObjectiveNominalMagnification(instrument, objective)));
