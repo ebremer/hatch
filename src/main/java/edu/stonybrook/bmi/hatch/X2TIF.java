@@ -180,21 +180,11 @@ public class X2TIF implements AutoCloseable {
         }
         xmp = new XMP();
         FindMeta(xmp);
-        BigDecimal xpp = BigDecimal.valueOf(px.doubleValue()).divide(BigDecimal.TEN);        
-        BigDecimal ypp = BigDecimal.valueOf(py.doubleValue()).divide(BigDecimal.TEN);
-        xpp = xpp.divide(BigDecimal.valueOf(1000d));
-        ypp = ypp.divide(BigDecimal.valueOf(1000d));
-        System.out.println(xpp.toPlainString());
-        xpp = BigDecimal.ONE.divide(xpp, 5, RoundingMode.HALF_UP);
-        ypp = BigDecimal.ONE.divide(ypp, 5, RoundingMode.HALF_UP);
-        xpp.divide(BigDecimal.valueOf(1000d));
-        ypp.divide(BigDecimal.valueOf(1000d));
-        System.out.println(xpp.toPlainString());
         //ypp = BigDecimal.valueOf(1d).divide(ypp.divide(BigDecimal.valueOf(1000d)));
         //xmp.setSizePerPixelXinMM(BigDecimal.valueOf(1d).divide(BigDecimal.valueOf(py.doubleValue()).divide(BigDecimal.TEN).divide(BigDecimal.valueOf(1000d))).divide(BigDecimal.valueOf(1000d)));
         //xmp.setSizePerPixelXinMM(BigDecimal.valueOf(1d).divide(BigDecimal.valueOf(py.doubleValue()).divide(BigDecimal.TEN).divide(BigDecimal.valueOf(1000d))).divide(BigDecimal.valueOf(1000d)));
-        xmp.setSizePerPixelXinMM(xpp);
-        xmp.setSizePerPixelYinMM(ypp);
+        //xmp.setSizePerPixelXinMM(xpp);
+        //xmp.setSizePerPixelYinMM(ypp);
         //xmp.setSizePerPixelYinMM((1d/((py.doubleValue()/10d)/1000d))/1000d);
     }
     
@@ -219,9 +209,8 @@ public class X2TIF implements AutoCloseable {
                     }
                     Time timex = mx.getPlaneExposureTime(maximage, 0);
                     System.out.println(timex);                    
-                    Unit unit = timex.unit();
-                    String sym = unit.getSymbol();
-                    System.out.println(sym+"  "+"s".equals(sym));
+                    BigDecimal t = BigDecimal.valueOf(timex.value(UNITS.MILLISECOND).doubleValue());
+                    xmp.setExposureTime(t);
                     if (instrument >= 0 ) {
                         xmp.setMagnification(BigDecimal.valueOf(mx.getObjectiveNominalMagnification(instrument, objective)));
                         String manu = mx.getDetectorManufacturer(instrument, objective);
@@ -234,6 +223,16 @@ public class X2TIF implements AutoCloseable {
                         }
                     }
                 } catch (NullPointerException ex) {}
+                BigDecimal xpp = BigDecimal.valueOf(px.doubleValue()).divide(BigDecimal.TEN);        
+                BigDecimal ypp = BigDecimal.valueOf(py.doubleValue()).divide(BigDecimal.TEN);
+                xpp = xpp.divide(BigDecimal.valueOf(1000d));
+                ypp = ypp.divide(BigDecimal.valueOf(1000d));
+                xpp = BigDecimal.ONE.divide(xpp, 5, RoundingMode.HALF_UP);
+                ypp = BigDecimal.ONE.divide(ypp, 5, RoundingMode.HALF_UP);
+                xpp = xpp.multiply(BigDecimal.valueOf(1000d));
+                ypp = ypp.multiply(BigDecimal.valueOf(1000d));
+                xmp.setSizePerPixelXinMM(xpp);
+                xmp.setSizePerPixelYinMM(ypp);
             }
             case SVSReader r -> {
                 Map<String,Object> list = r.getSeriesMetadata();
@@ -243,7 +242,7 @@ public class X2TIF implements AutoCloseable {
                 Double exposuretime = Double.valueOf((String) list.get("Exposure Time"));
                 Double exposurescale = Double.valueOf((String) list.get("Exposure Scale"));
                 xmp.setExposureTime( BigDecimal.valueOf(exposuretime).multiply(BigDecimal.valueOf( exposurescale ).divide(BigDecimal.valueOf(1000d))));
-                BigDecimal mpp = BigDecimal.valueOf(Double.parseDouble((String) list.get("MPP"))).divide(BigDecimal.valueOf(1000000));
+                BigDecimal mpp = BigDecimal.valueOf(Double.parseDouble((String) list.get("MPP"))).multiply(BigDecimal.valueOf(1000000));
                 xmp.setSizePerPixelXinMM(mpp);
                 xmp.setSizePerPixelYinMM(mpp);
                 xmp.setICCColorProfile((String) list.get("ICC Profile"));
