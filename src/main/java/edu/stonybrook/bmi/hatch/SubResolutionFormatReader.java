@@ -62,7 +62,7 @@ public abstract class SubResolutionFormatReader extends FormatReader {
   public SubResolutionFormatReader(String format, String[] suffixes) {
     super(format, suffixes);
   }
-  
+
   // -- Internal FormatReader API methods --
 
   /**
