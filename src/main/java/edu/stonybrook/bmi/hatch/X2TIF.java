@@ -32,7 +32,6 @@ import ome.units.quantity.Length;
 import ome.xml.model.enums.DimensionOrder;
 import ome.xml.model.enums.PixelType;
 import ome.xml.model.primitives.PositiveInteger;
-import com.ebremer.halcyon.lib.XMP;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Map;

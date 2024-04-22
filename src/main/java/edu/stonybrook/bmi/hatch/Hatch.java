@@ -170,7 +170,7 @@ public class Hatch {
                 LOGGER.severe(params.src.toString()+" does not exist!");
             }  
         } catch (ParameterException ex) {
-            LOGGER.severe("FILE PROCESSOR ERROR --> "+params.src.toString()+" "+params.dest.toString()+" "+ex.toString());
+            LOGGER.severe(ex.getMessage());
         }
     }
 }
