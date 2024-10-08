@@ -88,7 +88,7 @@
 	</repositories>
         <profiles>
             <profile>
-                <id>hatchjar</id>
+                <id>jar</id>
                 <activation>
                     <activeByDefault>true</activeByDefault>
                 </activation>
@@ -152,7 +152,7 @@
                 </build>
             </profile>
             <profile>
-                <id>hatch</id>
+                <id>native</id>
                 <build>
                     <plugins>
                         <plugin>
