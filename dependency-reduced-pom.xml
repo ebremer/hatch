@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>edu.stonybrook.bmi</groupId>
   <artifactId>hatch</artifactId>
-  <version>4.0.2</version>
+  <version>4.2.1</version>
   <build>
     <resources>
       <resource>
@@ -28,7 +28,7 @@
         <plugins>
           <plugin>
             <artifactId>maven-enforcer-plugin</artifactId>
-            <version>3.5.0</version>
+            <version>3.6.1</version>
             <executions>
               <execution>
                 <id>enforce</id>
@@ -86,7 +86,7 @@
         <plugins>
           <plugin>
             <artifactId>maven-compiler-plugin</artifactId>
-            <version>3.13.0</version>
+            <version>3.14.0</version>
             <configuration>
               <compilerArgs>
                 <arg>--add-reads</arg>
@@ -97,7 +97,7 @@
           <plugin>
             <groupId>org.graalvm.buildtools</groupId>
             <artifactId>native-maven-plugin</artifactId>
-            <version>0.10.3</version>
+            <version>0.11.0</version>
             <extensions>true</extensions>
             <executions>
               <execution>
@@ -120,6 +120,8 @@
                 <buildArg>--enable-url-protocols=https</buildArg>
                 <buildArg>-H:+AddAllCharsets</buildArg>
                 <buildArg>--gc=G1</buildArg>
+                <buildArg>-march=native</buildArg>
+                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                 <buildArg>-H:IncludeResources="logging.properties"</buildArg>
               </buildArgs>
             </configuration>
@@ -148,16 +150,15 @@
     <dependency>
       <groupId>org.apache.jena</groupId>
       <artifactId>apache-jena-libs</artifactId>
-      <version>5.1.0</version>
+      <version>5.5.0</version>
       <type>pom</type>
       <scope>compile</scope>
     </dependency>
   </dependencies>
   <properties>
-    <maven.compiler.target>21</maven.compiler.target>
-    <twelvemonkeys.version>3.12.0</twelvemonkeys.version>
-    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <ver.bioformats>7.3.1</ver.bioformats>
+    <twelvemonkeys.version>3.12.0</twelvemonkeys.version>
+    <ver.bioformats>8.3.0</ver.bioformats>
   </properties>
 </project>

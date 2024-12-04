@@ -13,13 +13,15 @@ import javax.imageio.ImageIO;
  */
 public class JPEGBuffer {
     private final byte[] buf;
+    private String src;
     
     public JPEGBuffer(byte[] buffer) {
         buf = buffer;
     }
     
-    public JPEGBuffer(BufferedImage bi, float compression) {
-        buf = JPEGTools.Dump2ByteArray(bi,compression);
+    public JPEGBuffer(String src, BufferedImage bi, float compression) {
+        this.src = src;
+        buf = JPEGTools.Dump2ByteArray(src,bi,compression);
     }
     
     public byte[] GetBytes() {

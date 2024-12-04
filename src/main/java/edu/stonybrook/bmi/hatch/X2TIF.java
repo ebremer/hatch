@@ -364,6 +364,7 @@ public class X2TIF implements AutoCloseable {
         if (nYTiles * tileSizeY != height) nYTiles++;
         int numtiles = nXTiles*nYTiles;
         pyramid = new Pyramid(params,nXTiles,nYTiles,tileSizeX,tileSizeY,width,height);
+        pyramid.setSource(inputFile);
         byte[] rawbuffer = new byte[TileSize+20];
         loci.formats.tiff.IFD ifd = new loci.formats.tiff.IFD();
         ifd.put(IFD.RESOLUTION_UNIT, 3);

@@ -2,13 +2,9 @@ package edu.stonybrook.bmi.hatch;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteOrder;
 import java.util.Arrays;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageWriteParam;
@@ -42,7 +38,6 @@ public class JPEGTools {
     public static byte[] FindFirstEOI(RandomAccessInputStream ets, byte[] r) throws IOException {
         int c = 0;
         long begin = ets.getFilePointer();
-        //System.out.println(r.length+" FindFirstEOI : "+begin+" "+ets.isLittleEndian()+" "+ets.length());
         r[0] = ets.readByte();
         while(ets.getFilePointer()<ets.length()) {
             c++;
@@ -77,20 +72,8 @@ public class JPEGTools {
         ets.read(buffer);
         return buffer;
     }
-        
-    public static void split2433443343(byte[] buf, int c) {
-        try {
-            try (FileOutputStream fos = new FileOutputStream("/vsi/RAH-"+c+".jpg")) {
-                fos.write(buf);
-            }
-        } catch (FileNotFoundException ex) {
-            Logger.getLogger(JPEGTools.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (IOException ex) {
-            Logger.getLogger(JPEGTools.class.getName()).log(Level.SEVERE, null, ex);
-        }
-    }
     
-    public static byte[] Dump2ByteArray(BufferedImage bi, float compression) {
+    public static byte[] Dump2ByteArray(String src, BufferedImage bi, float compression) {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageWriter jpgWriter = (ImageWriter) ImageIO.getImageWritersByFormatName("jpg").next();
         ImageWriteParam param = jpgWriter.getDefaultWriteParam();
@@ -104,7 +87,10 @@ public class JPEGTools {
             try {
                 jpgWriter.write(null, outputImage, param);
             } catch (IOException ex) {
-                Logger.getLogger(NeoJPEGCodec.class.getName()).log(Level.SEVERE, null, ex);
+                throw new Error(ex.getMessage()+" "+src);
+                //Logger.getLogger(JPEGTools.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (Exception ex) {
+                throw new Error(ex.getMessage()+" "+src);
             }
             jpgWriter.dispose();
         return baos.toByteArray();

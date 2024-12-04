@@ -33,6 +33,7 @@ import javax.imageio.stream.MemoryCacheImageOutputStream;
  * @author erich
  */
 public class Pyramid {
+
     private JPEGBuffer[][] tiles;
     private int tilesX;
     private int tilesY;
@@ -43,6 +44,7 @@ public class Pyramid {
     private int width;
     private int height;
     private final HatchParameters params;
+    private String src = null;
     
     public Pyramid(HatchParameters params, int tilesX, int tilesY, int tileSizeX, int tileSizeY, int width, int height) {
         this.params = params;
@@ -53,6 +55,14 @@ public class Pyramid {
         this.height = height;
         this.width = width;
         tiles = new JPEGBuffer[tilesX][tilesY];
+    }
+    
+    public void setSource(String src) {
+        this.src = src;
+    }
+    
+    public String getSource() {
+        return src;
     }
     
     public HatchParameters getParameters() {
@@ -170,7 +180,7 @@ public class Pyramid {
     }
     
     public void put(BufferedImage bi, int x, int y) {
-        tiles[x][y] = new JPEGBuffer(bi,params.quality);
+        tiles[x][y] = new JPEGBuffer(src,bi,params.quality);
     }
     
     public void put(byte[] buffer, int x, int y) {
@@ -307,7 +317,7 @@ class MergeProcessor implements Runnable {
             }
             int nx = a/2;
             int ny = b/2;
-            neotiles[nx][ny] = new JPEGBuffer(Merge(nw,ne,sw,se),pyramid.getParameters().quality);
+            neotiles[nx][ny] = new JPEGBuffer(pyramid.getSource(), Merge(nw,ne,sw,se),pyramid.getParameters().quality);
         } else {
             throw new Error("NW TILE NULL!!!");
         }
