@@ -24,8 +24,8 @@ public class HatchParameters {
     @Parameter(names = "-dest", description = "Destination Folder or File", required = true)
     public File dest;  
     
-    @Parameter(names = "-fp", description = "# of file processors", converter = IntegerConverter.class)
-    public Integer fp = 1;  
+    @Parameter(names = "-fp", description = "# of file processors", converter = IntegerConverter.class, validateWith = PositiveInteger.class)
+    public Integer fp = 1;
 
     @Parameter(names = {"-filter", "-f"}, description = "String that each path must contain")
     public String filter = null;

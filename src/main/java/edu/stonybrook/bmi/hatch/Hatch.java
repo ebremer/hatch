@@ -21,16 +21,10 @@ import java.util.stream.Stream;
  * @author erich
  */
 public class Hatch {    
-    public static String software = "hatch 4.2.0 by Wing-n-Beak";
+    public static String software = "hatch 4.3.0 by Wing-n-Beak";
     private static final String[] ext = new String[] {".vsi", ".svs", ".tif"};
-    private static final String errorlog = "error.log";
     private static final Logger LOGGER;
-    public static final String HELP = Hatch.software+"\n"+
-        """
-        usage: hatch <src> <dest>
-        -v : verbose
-        """;
-    
+
     static {
          try {
              LogManager.getLogManager().readConfiguration(Hatch.class.getResourceAsStream("/logging.properties"));
@@ -76,16 +70,20 @@ public class Hatch {
         } catch (IOException ex) {            
             LOGGER.log(Level.SEVERE, "FILE PROCESSOR ERROR --> {0} {1} {2}", new Object[]{params.src.toString(), params.dest.toString(), ex.toString()});
         }
-        int cc = engine.getActiveCount()+engine.getQueue().size();
-        while ((engine.getActiveCount()+engine.getQueue().size())>0) {
-            int curr = engine.getActiveCount()+engine.getQueue().size();
-            if (cc!=curr) {
-                cc=curr;
-                if (params.verbose) LOGGER.log(Level.INFO, "All jobs submitted...waiting for {0}", curr);
+        engine.shutdown();
+        int cc = -1;
+        try {
+            while (!engine.awaitTermination(1, TimeUnit.SECONDS)) {
+                int curr = engine.getActiveCount()+engine.getQueue().size();
+                if (cc!=curr) {
+                    cc=curr;
+                    if (params.verbose) LOGGER.log(Level.INFO, "Waiting for {0} job(s) to finish...", curr);
+                }
             }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
         }
         LOGGER.info("Engine shutdown");
-        engine.shutdown();
     }
     
     private static String getFileNameBase(File file) {

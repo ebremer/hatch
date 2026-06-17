@@ -418,15 +418,15 @@ public class TiffParser implements Closeable {
     IFD ifd = new IFD();
 
     // save little-endian flag to internal LITTLE_ENDIAN tag
-    ifd.put(new Integer(IFD.LITTLE_ENDIAN), new Boolean(in.isLittleEndian()));
-    ifd.put(new Integer(IFD.BIG_TIFF), new Boolean(bigTiff));
+    ifd.put(Integer.valueOf(IFD.LITTLE_ENDIAN), Boolean.valueOf(in.isLittleEndian()));
+    ifd.put(Integer.valueOf(IFD.BIG_TIFF), Boolean.valueOf(bigTiff));
 
     // read in directory entries for this IFD
     LOGGER.trace("getIFD: seeking IFD at {}", offset);
     in.seek(offset);
     long numEntries = bigTiff ? in.readLong() : in.readUnsignedShort();
     LOGGER.trace("getIFD: {} directory entries to read", numEntries);
-    if (numEntries == 0 || numEntries == 1) return ifd;
+    if (numEntries == 0) return ifd;
 
     int bytesPerEntry = bigTiff ?
       TiffConstants.BIG_TIFF_BYTES_PER_ENTRY : TiffConstants.BYTES_PER_ENTRY;
@@ -456,7 +456,7 @@ public class TiffParser implements Closeable {
       Object value = null;
 
       long inputLen = in.length();
-      if (count * bpe + pointer > inputLen) {
+      if ((long) count * bpe + pointer > inputLen) {
         int oldCount = count;
         count = (int) ((inputLen - pointer) / bpe);
         LOGGER.trace("getIFD: truncated {} array elements for tag {}",
@@ -470,8 +470,8 @@ public class TiffParser implements Closeable {
       }
       else value = getIFDValue(entry);
 
-      if (value != null && !ifd.containsKey(new Integer(tag))) {
-        ifd.put(new Integer(tag), value);
+      if (value != null && !ifd.containsKey(Integer.valueOf(tag))) {
+        ifd.put(Integer.valueOf(tag), value);
       }
     }
 
@@ -499,7 +499,7 @@ public class TiffParser implements Closeable {
       if ((entry.getValueCount() < 10 * 1024 * 1024 || entry.getTag() < 32768) &&
         entry.getTag() != IFD.COLOR_MAP)
       {
-        ifd.put(new Integer(entry.getTag()), getIFDValue(entry));
+        ifd.put(Integer.valueOf(entry.getTag()), getIFDValue(entry));
       }
     }
   }
@@ -527,7 +527,7 @@ public class TiffParser implements Closeable {
 
     if (type == IFDType.BYTE) {
       // 8-bit unsigned integer
-      if (count == 1) return new Short(in.readByte());
+      if (count == 1) return Short.valueOf(in.readByte());
       byte[] bytes = new byte[count];
       in.readFully(bytes);
       // bytes are unsigned, so use shorts
@@ -567,7 +567,7 @@ public class TiffParser implements Closeable {
     }
     else if (type == IFDType.SHORT) {
       // 16-bit (2-byte) unsigned integer
-      if (count == 1) return new Integer(in.readUnsignedShort());
+      if (count == 1) return Integer.valueOf(in.readUnsignedShort());
       int[] shorts = new int[count];
       for (int j=0; j<count; j++) {
         shorts[j] = in.readUnsignedShort();
@@ -576,7 +576,7 @@ public class TiffParser implements Closeable {
     }
     else if (type == IFDType.LONG || type == IFDType.IFD) {
       // 32-bit (4-byte) unsigned integer
-      if (count == 1) return new Long(in.readUnsignedInt());
+      if (count == 1) return Long.valueOf(in.readUnsignedInt());
       long[] longs = new long[count];
       for (int j=0; j<count; j++) {
         if (in.getFilePointer() + 4 <= in.length()) {
@@ -587,7 +587,7 @@ public class TiffParser implements Closeable {
     }
     else if (type == IFDType.LONG8 || type == IFDType.SLONG8
              || type == IFDType.IFD8) {
-      if (count == 1) return new Long(in.readLong());
+      if (count == 1) return Long.valueOf(in.readLong());
       long[] longs = null;
 
       if (equalStrips && (entry.getTag() == IFD.STRIP_BYTE_COUNTS ||
@@ -625,35 +625,35 @@ public class TiffParser implements Closeable {
       // SBYTE: An 8-bit signed (twos-complement) integer
       // UNDEFINED: An 8-bit byte that may contain anything,
       // depending on the definition of the field
-      if (count == 1) return new Byte(in.readByte());
+      if (count == 1) return Byte.valueOf(in.readByte());
       byte[] sbytes = new byte[count];
       in.read(sbytes);
       return sbytes;
     }
     else if (type == IFDType.SSHORT) {
       // A 16-bit (2-byte) signed (twos-complement) integer
-      if (count == 1) return new Short(in.readShort());
+      if (count == 1) return Short.valueOf(in.readShort());
       short[] sshorts = new short[count];
       for (int j=0; j<count; j++) sshorts[j] = in.readShort();
       return sshorts;
     }
     else if (type == IFDType.SLONG) {
       // A 32-bit (4-byte) signed (twos-complement) integer
-      if (count == 1) return new Integer(in.readInt());
+      if (count == 1) return Integer.valueOf(in.readInt());
       int[] slongs = new int[count];
       for (int j=0; j<count; j++) slongs[j] = in.readInt();
       return slongs;
     }
     else if (type == IFDType.FLOAT) {
       // Single precision (4-byte) IEEE format
-      if (count == 1) return new Float(in.readFloat());
+      if (count == 1) return Float.valueOf(in.readFloat());
       float[] floats = new float[count];
       for (int j=0; j<count; j++) floats[j] = in.readFloat();
       return floats;
     }
     else if (type == IFDType.DOUBLE) {
       // Double precision (8-byte) IEEE format
-      if (count == 1) return new Double(in.readDouble());
+      if (count == 1) return Double.valueOf(in.readDouble());
       double[] doubles = new double[count];
       for (int j=0; j<count; j++) {
         doubles[j] = in.readDouble();
@@ -702,8 +702,10 @@ public class TiffParser implements Closeable {
     long tileLength = ifd.getTileLength();
     int samplesPerPixel = ifd.getSamplesPerPixel();
     int planarConfig = ifd.getPlanarConfiguration();
-    TiffCompression compression = TiffCompression.JPEG;
-    //loci.formats.tiff.TiffCompression compression = ifd.getCompression();
+    TiffCompression compression = ifd.getCompression();
+    if (compression != TiffCompression.JPEG) {
+      throw new FormatException("getTile only supports JPEG-compressed tiles, but found: " + compression);
+    }
     long numTileCols = ifd.getTilesPerRow();
     int pixel = ifd.getBytesPerSample()[0];
     int effectiveChannels = planarConfig == 2 ? 1 : samplesPerPixel;
@@ -1451,10 +1453,10 @@ public class TiffParser implements Closeable {
                 throw new Error("Can't handle PhotoInterp "+photoInterp);
         }
       in.seek(stripOffset + 2);
-      in.read(tile, jpegTable.length - 2 + APP14.length, tile.length - (jpegTable.length - 2 + APP14.length));
+      in.readFully(tile, jpegTable.length - 2 + APP14.length, tile.length - (jpegTable.length - 2 + APP14.length));
     } else {
       in.seek(stripOffset);
-      in.read(tile);
+      in.readFully(tile);
     }
     return tile;
   }

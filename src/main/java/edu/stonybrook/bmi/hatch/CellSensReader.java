@@ -944,9 +944,8 @@ public class CellSensReader extends FormatReader {
       try {
           return getRaw(rawbuffer, no, row, col);
       } catch (FormatException | IOException ex) {
-          Logger.getLogger(CellSensReader.class.getName()).log(Level.SEVERE, null, ex);
+          throw new RuntimeException("Failed to read raw tile [" + row + "," + col + "]", ex);
       }
-      return null;
   }
   
   public byte[] getRaw(byte[] rawbuffer, int no, int row, int col) throws FormatException, IOException {
@@ -1008,10 +1007,14 @@ public class CellSensReader extends FormatReader {
           }
         }
       }
-      BufferedImage bi = AWTImageTools.makeImage(tile, 512, 512, 3, true, 8/8, false, true, false);
+      int tw = tileX.get(getCoreIndex());
+      int th = tileY.get(getCoreIndex());
+      int channels = getRGBChannelCount();
+      int bpp = FormatTools.getBytesPerPixel(getPixelType());
+      BufferedImage bi = AWTImageTools.makeImage(tile, tw, th, channels, true, bpp, false, isLittleEndian(), false);
       Graphics2D graphics = bi.createGraphics();
       graphics.setColor(Color.BLACK);
-      graphics.fillRect(0, 0, 512, 512);
+      graphics.fillRect(0, 0, tw, th);
       ByteArrayOutputStream baos = new ByteArrayOutputStream();
       ImageIO.write(bi, "jpg", baos );
       tile = baos.toByteArray();
@@ -1029,7 +1032,7 @@ public class CellSensReader extends FormatReader {
         if (tileSize == 0) {
             tileSize = tileX.get(getCoreIndex()) * tileY.get(getCoreIndex()) * 10;
         }
-        options.maxBytes = (int) (offset + tileSize);
+        options.maxBytes = tileSize;
         // long end = index < tileOffsets.get(getCoreIndex()).length - 1 ? tileOffsets.get(getCoreIndex())[index + 1] : ets.length();
         switch (compressionType.get(getCoreIndex())) {
             case JPEG:
@@ -1124,7 +1127,7 @@ public class CellSensReader extends FormatReader {
       if (tileSize == 0) {
         tileSize = tileX.get(getCoreIndex()) * tileY.get(getCoreIndex()) * 10;
       }
-      options.maxBytes = (int) (offset + tileSize);
+      options.maxBytes = tileSize;
 
       
       long end = index < tileOffsets.get(getCoreIndex()).length - 1 ?
@@ -1220,11 +1223,13 @@ public class CellSensReader extends FormatReader {
     etsFile.skipBytes(4 * 17); // pixel info hints
 
     byte[] color = new byte[ms.sizeC * FormatTools.getBytesPerPixel(convertPixelType(pixelType))];
-    etsFile.read(color);
+    int colorFieldSize = 4 * 10; // background color occupies a fixed 40-byte field
+    int colorBytes = Math.min(color.length, colorFieldSize);
+    etsFile.read(color, 0, colorBytes);
 
     backgroundColor.put(getCoreIndex(), color);
 
-    etsFile.skipBytes(4 * 10 - color.length); // background color
+    etsFile.skipBytes(colorFieldSize - colorBytes); // remainder of background color field
     etsFile.skipBytes(4); // component order
     boolean usePyramid = etsFile.readInt() != 0;
 
@@ -1667,7 +1672,7 @@ public class CellSensReader extends FormatReader {
                 value = String.valueOf(vsi.readDouble());
                 break;
               case BOOLEAN:
-                value = new Boolean(vsi.readBoolean()).toString();
+                value = Boolean.valueOf(vsi.readBoolean()).toString();
                 break;
               case TCHAR:
               case UNICODE_TCHAR:
@@ -1799,71 +1804,71 @@ public class CellSensReader extends FormatReader {
                 pyramid.deviceManufacturers.add(value);
               }
               else if (tag == EXPOSURE_TIME && tagPrefix.length() == 0) {
-                pyramid.exposureTimes.add(new Long(value));
+                pyramid.exposureTimes.add(Long.valueOf(value));
               }
               else if (tag == EXPOSURE_TIME) {
-                pyramid.defaultExposureTime = new Long(value);
+                pyramid.defaultExposureTime = Long.valueOf(value);
               }
               else if (tag == CREATION_TIME && pyramid.acquisitionTime == null) {
-                pyramid.acquisitionTime = new Long(value);
+                pyramid.acquisitionTime = Long.valueOf(value);
               }
               else if (tag == REFRACTIVE_INDEX) {
-                pyramid.refractiveIndex = new Double(value);
+                pyramid.refractiveIndex = Double.valueOf(value);
               }
               else if (tag == OBJECTIVE_MAG) {
-                pyramid.magnification = new Double(value);
+                pyramid.magnification = Double.valueOf(value);
               }
               else if (tag == NUMERICAL_APERTURE) {
-                pyramid.numericalAperture = new Double(value);
+                pyramid.numericalAperture = Double.valueOf(value);
               }
               else if (tag == WORKING_DISTANCE) {
-                pyramid.workingDistance = new Double(value);
+                pyramid.workingDistance = Double.valueOf(value);
               }
               else if (tag == OBJECTIVE_NAME) {
                 pyramid.objectiveNames.add(value);
               }
               else if (tag == OBJECTIVE_TYPE) {
-                pyramid.objectiveTypes.add(new Integer(value));
+                pyramid.objectiveTypes.add(Integer.valueOf(value));
               }
               else if (tag == BIT_DEPTH) {
-                pyramid.bitDepth = new Integer(value);
+                pyramid.bitDepth = Integer.valueOf(value);
               }
               else if (tag == X_BINNING) {
-                pyramid.binningX = new Integer(value);
+                pyramid.binningX = Integer.valueOf(value);
               }
               else if (tag == Y_BINNING) {
-                pyramid.binningY = new Integer(value);
+                pyramid.binningY = Integer.valueOf(value);
               }
               else if (tag == CAMERA_GAIN) {
-                pyramid.gain = new Double(value);
+                pyramid.gain = Double.valueOf(value);
               }
               else if (tag == CAMERA_OFFSET) {
-                pyramid.offset = new Double(value);
+                pyramid.offset = Double.valueOf(value);
               }
               else if (tag == RED_GAIN) {
-                pyramid.redGain = new Double(value);
+                pyramid.redGain = Double.valueOf(value);
               }
               else if (tag == GREEN_GAIN) {
-                pyramid.greenGain = new Double(value);
+                pyramid.greenGain = Double.valueOf(value);
               }
               else if (tag == BLUE_GAIN) {
-                pyramid.blueGain = new Double(value);
+                pyramid.blueGain = Double.valueOf(value);
               }
               else if (tag == RED_OFFSET) {
-                pyramid.redOffset = new Double(value);
+                pyramid.redOffset = Double.valueOf(value);
               }
               else if (tag == GREEN_OFFSET) {
-                pyramid.greenOffset = new Double(value);
+                pyramid.greenOffset = Double.valueOf(value);
               }
               else if (tag == BLUE_OFFSET) {
-                pyramid.blueOffset = new Double(value);
+                pyramid.blueOffset = Double.valueOf(value);
               }
               else if (tag == VALUE) {
                 if (tagPrefix.equals("Channel Wavelength ")) {
-                  pyramid.channelWavelengths.add(new Double(value));
+                  pyramid.channelWavelengths.add(Double.valueOf(value));
                 }
                 else if (tagPrefix.startsWith("Objective Working Distance")) {
-                  pyramid.workingDistance = new Double(value);
+                  pyramid.workingDistance = Double.valueOf(value);
                 }
                 else if (tagPrefix.equals("Z start position")) {
                   pyramid.zStart = DataTools.parseDouble(value);
@@ -1952,6 +1957,7 @@ public class CellSensReader extends FormatReader {
                 break;
               case PHASE:
                 p.dimensionOrdering.put("P", dimensionTag);
+                break;
               default:
                 throw new FormatException("Invalid dimension: " + dimension);
             }
@@ -1972,7 +1978,7 @@ public class CellSensReader extends FormatReader {
       }
     }
     catch (Exception e) {
-      LOGGER.debug("Failed to read all tags", e);
+      LOGGER.warn("Failed to read all tags (VSI metadata may be incomplete)", e);
     }
   }
 
@@ -2488,18 +2494,8 @@ public class CellSensReader extends FormatReader {
   }
 
     @Override
-    public byte[] getDecodedTile(byte[] rawbuffer, int no, int row, int col) {
-        throw new UnsupportedOperationException("Not supported yet.");
-    }
-
-    @Override
     public byte[] getRawBytes(IFD ifd, int no, int row, int col) {
-        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
-    }
-
-    @Override
-    public byte[] getRawBytesMeta(int no, int row, int col) {
-        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
+        throw new UnsupportedOperationException("getRawBytes(IFD) is not supported by CellSensReader");
     }
 
   // -- Helper class --

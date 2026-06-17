@@ -147,7 +147,7 @@ public class SVSReader extends BaseTiffReader {
    */
   @Override
   public byte[] openBytes(int no, byte[] buf, int x, int y, int w, int h) throws FormatException, IOException {
-    if (core.size() == 1) {
+    if (core.flattenedSize() == 1) {
       return super.openBytes(no, buf, x, y, w, h);
     }
     FormatTools.checkPlaneParameters(this, no, buf.length, x, y, w, h);

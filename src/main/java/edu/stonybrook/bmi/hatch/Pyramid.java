@@ -9,22 +9,20 @@ import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.concurrent.Future;
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
 import javax.imageio.stream.ImageInputStream;
-import javax.imageio.stream.ImageOutputStream;
 import javax.imageio.stream.MemoryCacheImageInputStream;
 import javax.imageio.stream.MemoryCacheImageOutputStream;
 
@@ -109,6 +107,9 @@ public class Pyramid {
     }
         
     public byte[] GetImageBytes(int a, int b) {
+        if (tiles[a][b] == null) {
+            throw new IllegalStateException("Missing pyramid tile at " + a + "," + b);
+        }
         ImageWriter jpgWriter = (ImageWriter) ImageIO.getImageWritersByFormatName("jpg").next();
         ImageWriteParam param = jpgWriter.getDefaultWriteParam();
         param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
@@ -118,65 +119,19 @@ public class Pyramid {
         MemoryCacheImageOutputStream outputStream = new MemoryCacheImageOutputStream(baos);
         outputStream.setByteOrder(ByteOrder.LITTLE_ENDIAN);
         jpgWriter.setOutput(outputStream);
-        if (tiles[a][b]!=null) {
-            IIOImage outputImage = new IIOImage(tiles[a][b].GetBufferImage(), null, null);
-            try {
-                jpgWriter.write(null, outputImage, param);
-            } catch (IOException ex) {
-                Logger.getLogger(NeoJPEGCodec.class.getName()).log(Level.SEVERE, null, ex);
-            }
+        IIOImage outputImage = new IIOImage(tiles[a][b].GetBufferImage(), null, null);
+        try {
+            jpgWriter.write(null, outputImage, param);
+        } catch (IOException ex) {
+            throw new RuntimeException("Failed to JPEG-encode pyramid tile " + a + "," + b, ex);
+        } finally {
             jpgWriter.dispose();
-        } else {
-            System.out.println("NULL TILE : "+a+"-"+b+" "+(tiles[a][b]==null));
         }
         return baos.toByteArray();
     }
     
     public BufferedImage getBufferedImage(int a, int b) {
         return tiles[a][b].GetBufferImage();
-    }
-    
-    public void Dump2File(byte[] buffer, int a, int b) {
-        try {
-            File f = new File("/vsi/dump/"+xscale+" === "+a+"-"+b+".jpg");
-            if (!f.getParentFile().exists()) {
-                f.getParentFile().mkdirs();
-            }
-            try (FileOutputStream fos = new FileOutputStream(f)) {
-                fos.write(buffer);
-                fos.flush();
-            }
-        } catch (FileNotFoundException ex) {
-            Logger.getLogger(Pyramid.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (IOException ex) {
-            Logger.getLogger(Pyramid.class.getName()).log(Level.SEVERE, null, ex);
-        }
-    }
-    
-    public void Dump() throws FileNotFoundException, IOException {
-        for (int a=0; a<tilesX; a++) {
-            for (int b=0; b<tilesY; b++) {
-                ImageWriter jpgWriter = (ImageWriter) ImageIO.getImageWritersByFormatName("jpg").next();
-                ImageWriteParam param = jpgWriter.getDefaultWriteParam();
-                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-                param.setProgressiveMode(ImageWriteParam.MODE_DISABLED);
-                param.setCompressionQuality(params.quality);
-                FileOutputStream fos = new FileOutputStream("/vsi/whoa/"+xscale+"----"+a+"-"+b+".jpg");
-                ImageOutputStream stream = ImageIO.createImageOutputStream(fos);
-                jpgWriter.setOutput(stream);
-                if (tiles[a][b]!=null) {
-                    IIOImage outputImage = new IIOImage(tiles[a][b].GetBufferImage(), null, null);
-                    try {
-                        jpgWriter.write(null, outputImage, param);
-                    } catch (IOException ex) {
-                        Logger.getLogger(NeoJPEGCodec.class.getName()).log(Level.SEVERE, null, ex);
-                    }
-                    jpgWriter.dispose();
-                } else {
-                    System.out.println("NULL TILE : "+a+"-"+b+" "+(tiles[a][b]==null));
-                }
-            }
-        }
     }
     
     public void put(BufferedImage bi, int x, int y) {
@@ -197,22 +152,22 @@ public class Pyramid {
     }
 
     public void Shrink() {
+        List<Future<?>> futures = new ArrayList<>();
         try (ExecutorService engine = Executors.newVirtualThreadPerTaskExecutor()) {
             JPEGBuffer c = tiles[tilesX-1][tilesY-1];
             if (c.GetBufferImage().getWidth()==1) {
-                System.out.println("shrink clip x");
                 tilesX--;
             }
             if (c.GetBufferImage().getHeight()==1) {
-                System.out.println("shrink clip y");
                 tilesY--;
             }
             for (int a=0; a<tilesX; a++) {
                 for (int b=0; b<tilesY; b++) {
-                    engine.submit(new SmushProcessor(this, a, b));
+                    futures.add(engine.submit(new SmushProcessor(this, a, b)));
                 }
             }
         }
+        awaitAll(futures);
         CalculateHeightandWidth();
     }
     
@@ -220,6 +175,7 @@ public class Pyramid {
         int neotilesX;
         int neotilesY;
         JPEGBuffer[][] neotiles;
+        List<Future<?>> futures = new ArrayList<>();
         try (ExecutorService engine = Executors.newVirtualThreadPerTaskExecutor()) {
             xscale++;
             neotilesX = (int) Math.ceil(tilesX/2f);
@@ -227,13 +183,29 @@ public class Pyramid {
             neotiles = new JPEGBuffer[neotilesX][neotilesY];
             for (int a=0; a<tilesX; a=a+2) {
                 for (int b=0; b<tilesY; b=b+2) {
-                    engine.submit(new MergeProcessor(this, neotiles, a, b));
+                    futures.add(engine.submit(new MergeProcessor(this, neotiles, a, b)));
                 }
             }
         }
+        awaitAll(futures);
         tiles = neotiles;
         tilesX = neotilesX;
         tilesY = neotilesY;
+    }
+
+    private static void awaitAll(List<Future<?>> futures) {
+        for (Future<?> f : futures) {
+            try {
+                f.get();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Pyramid generation was interrupted", ex);
+            } catch (ExecutionException ex) {
+                Throwable cause = ex.getCause();
+                throw new RuntimeException("Pyramid tile generation failed: "
+                        + (cause == null ? ex.toString() : cause.getMessage()), cause);
+            }
+        }
     }
 }
 
@@ -263,7 +235,7 @@ class SmushProcessor implements Runnable {
             scaleOp.filter(bi, target);
             pyramid.put(target,a,b);   
         } catch (IOException ex) {
-            Logger.getLogger(SmushProcessor.class.getName()).log(Level.SEVERE, null, ex);
+            throw new RuntimeException("Failed to downsample pyramid tile " + a + "," + b, ex);
         }
     }
 }

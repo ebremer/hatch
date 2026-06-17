@@ -29,7 +29,7 @@ public class HatchSaver extends TiffSaver {
         long[] byteCounts;
         long[] offsets;
         long[] ifdByteCounts = ifd.getIFDLongArray(IFD.TILE_BYTE_COUNTS);
-        byteCounts = ifdByteCounts;
+        byteCounts = ifdByteCounts.clone();
         int tileOrStripOffsetX = x / (int) ifd.getTileWidth();
         int tileOrStripOffsetY = y / (int) ifd.getTileLength();
         int firstOffset = (tileOrStripOffsetY * tilesPerRow) + tileOrStripOffsetX;

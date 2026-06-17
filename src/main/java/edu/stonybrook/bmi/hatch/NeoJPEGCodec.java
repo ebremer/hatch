@@ -59,8 +59,13 @@ public class NeoJPEGCodec extends BaseCodec {
         long fp = in.getFilePointer();
         try {
             try {
-                while (in.read() != (byte) 0xff || in.read() != (byte) 0xd8);
-                in.seek(in.getFilePointer() - 2);
+                int marker;
+                while ((marker = in.read()) != -1 && (marker != 0xff || in.read() != 0xd8));
+                if (marker == -1) {
+                    in.seek(fp);
+                } else {
+                    in.seek(in.getFilePointer() - 2);
+                }
       }
       catch (EOFException e) {
         in.seek(fp);

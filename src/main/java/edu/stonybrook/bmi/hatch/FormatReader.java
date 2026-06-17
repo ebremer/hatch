@@ -1281,7 +1281,7 @@ public abstract class FormatReader extends FormatHandler
 
     for (int i = 0; i < series && index < core.size(); i++) {
       if (core.get(i) != null)
-        index += core.get(index).resolutionCount;
+        index += core.get(i).resolutionCount;
       else
         throw new IllegalArgumentException("Invalid series (null core["+i+"]: " + series);
     }
@@ -1830,9 +1830,7 @@ public abstract class FormatReader extends FormatHandler
     id.indexOf("\n") > 0;
   }
   
-  public abstract byte[] getRawBytesMeta(int no, int row, int col);
   public abstract byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col);
   public abstract byte[] getRawBytes(IFD ifd, int no, int row, int col);
-  public abstract byte[] getDecodedTile(byte[] rawbuffer, int no, int row, int col);
   public abstract IFDList getIFDs();
 }

@@ -276,38 +276,6 @@ public class MinimalTiffReader extends SubResolutionFormatReader {
   }
   
   @Override
-  public byte[] getDecodedTile(byte[] rawbuffer, int no, int row, int col) {
-    IFD firstIFD = ifds.get(0);
-    lastPlane = no;
-    IFD ifd;
-    if (seriesToIFD) {
-      ifd = ifds.get(getSeries());
-    } else {
-      ifd = ifds.get(no);
-    }
-    try {
-        if ((firstIFD.getCompression() == TiffCompression.JPEG_2000 || firstIFD.getCompression() == TiffCompression.JPEG_2000_LOSSY) && resolutionLevels != null) {
-            if (getCoreIndex() > 0) {
-                ifd = subResolutionIFDs.get(no).get(getCoreIndex() - 1);
-            }
-            setResolutionLevel(ifd);
-        }
-    } catch (FormatException ex) {
-        java.util.logging.Logger.getLogger(MinimalTiffReader.class.getName()).log(Level.SEVERE, null, ex);
-    }
-    if (tiffParser == null) {
-      initTiffParser();
-    }
-    byte[] x = null;
-    try {
-        x = tiffParser.getTile(ifd, x, row, col);
-    } catch (FormatException | IOException ex) {
-        java.util.logging.Logger.getLogger(MinimalTiffReader.class.getName()).log(Level.SEVERE, null, ex);
-    }
-    return x;   
-  }
-  
-  @Override
   public byte[] getRawBytes(IFD ifd, int no, int row, int col) {
     if (tiffParser == null) {
       initTiffParser();
@@ -316,7 +284,7 @@ public class MinimalTiffReader extends SubResolutionFormatReader {
     try {
         x = tiffParser.getRawTile(ifd, x, row, col);
     } catch (FormatException | IOException ex) {
-        java.util.logging.Logger.getLogger(MinimalTiffReader.class.getName()).log(Level.SEVERE, null, ex);
+        throw new RuntimeException("Failed to read raw tile [" + row + "," + col + "]", ex);
     }
     return x;
   }
@@ -348,7 +316,7 @@ public class MinimalTiffReader extends SubResolutionFormatReader {
     try {
         x = tiffParser.getRawTile(ifd, x, row, col);
     } catch (FormatException | IOException ex) {
-        java.util.logging.Logger.getLogger(MinimalTiffReader.class.getName()).log(Level.SEVERE, null, ex);
+        throw new RuntimeException("Failed to read raw tile [" + row + "," + col + "]", ex);
     }
     return x;
   }
@@ -786,9 +754,5 @@ public class MinimalTiffReader extends SubResolutionFormatReader {
     tiffParser.setUse64BitOffsets(use64Bit);
   }
 
-    @Override
-    public byte[] getRawBytesMeta(int no, int row, int col) {
-        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
-    }
 
 }

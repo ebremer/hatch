@@ -19,60 +19,30 @@ import loci.common.RandomAccessInputStream;
 public class JPEGTools {
     static byte FF = (byte) 0xff;
     static byte D9 = (byte) 0xd9;
-    
-    public static void FindEOI(byte[] buf) {
-        for (int i=0; i<buf.length; i++) {
-            if (Byte.compare(buf[i],FF)==0) {
-                if (Byte.compare(buf[i+1],D9)==0) {
-                    System.out.println("EOI : "+i+" "+buf.length);
-                }
-            } else {
-            }
-        }
-    }
-    
-    //public static int Compare(byte a, byte b) {
-//        return 0xff&(a-b);
-  //  }
 
     public static byte[] FindFirstEOI(RandomAccessInputStream ets, byte[] r) throws IOException {
+        long begin = ets.getFilePointer();
+        long length = ets.length();
         int c = 0;
-        long begin = ets.getFilePointer();
-        r[0] = ets.readByte();
-        while(ets.getFilePointer()<ets.length()) {
-            c++;
-            r[c] = ets.readByte();
-            //System.out.print(String.format("%02x",r[c])+" ");
-            if (Byte.compare(r[c-1],FF)==0) {
-                if (Byte.compare(r[c],D9)==0) {
-                    ets.seek(begin);
-                    return Arrays.copyOf(r, c+1);
-                }
+        byte prev = 0;
+        while (ets.getFilePointer() < length) {
+            if (c >= r.length) {
+                throw new IOException("JPEG tile starting at offset " + begin
+                        + " has no EOI (FFD9) marker within the " + r.length + "-byte buffer");
             }
-        }
-        return null;
-    }
-    
-    public static byte[] FindFirstEOI(byte[] ets) throws IOException {
-        int c=0;
-        while(c<ets.length) {
-            c++;
-            if (Byte.compare(ets[c-1],FF)==0) {
-                if (Byte.compare(ets[c],D9)==0) {
-                    return Arrays.copyOf(ets, c+1);
-                }
+            byte b = ets.readByte();
+            r[c] = b;
+            if (c > 0 && Byte.compare(prev, FF) == 0 && Byte.compare(b, D9) == 0) {
+                ets.seek(begin);
+                return Arrays.copyOf(r, c + 1);
             }
+            prev = b;
+            c++;
         }
-        return null;
+        throw new IOException("Reached end of stream at offset " + begin
+                + " before finding JPEG EOI (FFD9) marker");
     }
-    
-    public static byte[] GetJPG(RandomAccessInputStream ets, long end) throws IOException {
-        long begin = ets.getFilePointer();
-        byte[] buffer = new byte[(int)(end-begin)];
-        ets.read(buffer);
-        return buffer;
-    }
-    
+
     public static byte[] Dump2ByteArray(String src, BufferedImage bi, float compression) {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageWriter jpgWriter = (ImageWriter) ImageIO.getImageWritersByFormatName("jpg").next();
@@ -84,15 +54,14 @@ public class JPEGTools {
         outputStream.setByteOrder(ByteOrder.LITTLE_ENDIAN);
         jpgWriter.setOutput(outputStream);
         IIOImage outputImage = new IIOImage(bi, null, null);
-            try {
-                jpgWriter.write(null, outputImage, param);
-            } catch (IOException ex) {
-                throw new Error(ex.getMessage()+" "+src);
-                //Logger.getLogger(JPEGTools.class.getName()).log(Level.SEVERE, null, ex);
-            } catch (Exception ex) {
-                throw new Error(ex.getMessage()+" "+src);
-            }
-            jpgWriter.dispose();
+        try {
+            jpgWriter.write(null, outputImage, param);
+        } catch (IOException ex) {
+            throw new Error(ex.getMessage() + " " + src);
+        } catch (Exception ex) {
+            throw new Error(ex.getMessage() + " " + src);
+        }
+        jpgWriter.dispose();
         return baos.toByteArray();
     }
 }
