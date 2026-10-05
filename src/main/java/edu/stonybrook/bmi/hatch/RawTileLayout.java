@@ -2,7 +2,7 @@ package edu.stonybrook.bmi.hatch;
 
 /**
  * The grid of raw JPEG tiles a reader hands out for its current series via
- * {@link FormatReader#getRawBytes(byte[], int, int, int)}.
+ * {@link RawTileSource#getRawTile(int, int)}.
  *
  * @param width       width in pixels of the image the tile grid covers
  * @param height      height in pixels of the image the tile grid covers

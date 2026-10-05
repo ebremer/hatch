@@ -46,9 +46,13 @@ public class HatchParameters {
     @Parameter(names = {"-validateonly"})
     public boolean validateonly = false;
     
-    @Parameter(names = {"-quality","-q"}, description = "pyramid JPEG compression quality, 0.0 < q <= 1.0")
-    public float quality = 1.0f;
+    @Parameter(names = {"-quality","-q"}, description = "JPEG quality of the reduced pyramid levels, 0.0 < q <= 1.0 "
+        + "(the full-resolution level is copied, not re-encoded). 1.0 is several times larger for little visible gain")
+    public float quality = 0.9f;
     
+    @Parameter(names = "-log", description = "Append error messages to this file")
+    public File log = null;
+
     @Parameter(names = {"-s","-series"}, description = "specify source series separated by commas")
     public List<String> series = Lists.newArrayList();    
 

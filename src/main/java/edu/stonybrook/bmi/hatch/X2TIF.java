@@ -1,5 +1,6 @@
 package edu.stonybrook.bmi.hatch;
 
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -18,6 +19,7 @@ import loci.formats.meta.IMetadata;
 import loci.formats.meta.MetadataRetrieve;
 import loci.formats.ome.OMEPyramidStore;
 import loci.formats.services.OMEXMLService;
+import loci.formats.tiff.IFD;
 import loci.formats.tiff.PhotoInterp;
 import loci.formats.tiff.TiffRational;
 import ome.units.UNITS;
@@ -28,14 +30,13 @@ import ome.xml.model.primitives.PositiveInteger;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.Map;
-import java.util.logging.LogManager;
 
 /**
  *
  * @author erich
  */
 public class X2TIF implements AutoCloseable {
-    private FormatReader reader;
+    private RawTileSource reader;
     private final String inputFile;
     private final String dest;
     private int tileSizeX;
@@ -43,29 +44,18 @@ public class X2TIF implements AutoCloseable {
     private int height;
     private int width;
     private int maximage;
-    private Pyramid pyramid;
     private final StopWatch time;
     private int depth;
     private Length ppx;
     private Length ppy;
     private TiffRational px;
     private TiffRational py;
-    private int TileSize;
     private final HatchParameters params;
-    private HatchWriter writer;
+    private TiledTiffWriter writer;
     private IMetadata meta;
     private RawTileLayout layout;
-    private static final Logger LOGGER;
+    private static final Logger LOGGER = Logger.getLogger(X2TIF.class.getName());
     private XMP xmp = null;
-
-    static {
-         try {
-             LogManager.getLogManager().readConfiguration(X2TIF.class.getResourceAsStream("/logging.properties"));
-         } catch (IOException | SecurityException | ExceptionInInitializerError ex) {
-             Logger.getLogger(X2TIF.class.getName()).log(Level.SEVERE, "Failed to read logging.properties file", ex);
-         }
-         LOGGER = Logger.getLogger(X2TIF.class.getName());
-     }
 
     public X2TIF(HatchParameters params, String src, String dest, Integer series) throws FormatException, IOException {
         time = new StopWatch();
@@ -81,8 +71,8 @@ public class X2TIF implements AutoCloseable {
             IMetadata omexml = service.createOMEXMLMetadata();
             String end = inputFile.length() >= 4 ? inputFile.substring(inputFile.length()-4).toLowerCase() : "";
             switch (end) {
-                case ".tif" -> reader = new TiffReader();
-                case ".svs" -> reader = new SVSReader();
+                case ".tif" -> reader = new HatchTiffReader();
+                case ".svs" -> reader = new HatchSVSReader();
                 case ".vsi" -> reader = new CellSensReader();
                 default -> throw new IllegalArgumentException("Unsupported input file type (expected .tif/.svs/.vsi): " + inputFile);
             }
@@ -111,6 +101,15 @@ public class X2TIF implements AutoCloseable {
             tileSizeY = layout.tileHeight();
             width = layout.width();
             height = layout.height();
+            if (tileSizeX < 2 || tileSizeY < 2 || tileSizeX % 2 != 0 || tileSizeY % 2 != 0) {
+                throw new FormatException("Tile size " + tileSizeX + "x" + tileSizeY
+                    + " is not supported; reduced levels need even tile dimensions");
+            }
+            if (layout.tilesAcross() != PyramidBuilder.tilesFor(width, tileSizeX)
+                    || layout.tilesDown() != PyramidBuilder.tilesFor(height, tileSizeY)) {
+                throw new FormatException("A " + layout.tilesAcross() + "x" + layout.tilesDown() + " tile grid cannot cover "
+                    + width + "x" + height + " pixels in " + tileSizeX + "x" + tileSizeY + " tiles");
+            }
             MetadataRetrieve retrieve = (MetadataRetrieve) reader.getMetadataStore();
             ppx = retrieve.getPixelsPhysicalSizeX(maximage);
             ppy = retrieve.getPixelsPhysicalSizeY(maximage);
@@ -119,11 +118,7 @@ public class X2TIF implements AutoCloseable {
                 LOGGER.log(Level.INFO, "Image Size   : {0}x{1}", new Object[]{width, height});
                 LOGGER.log(Level.INFO, "Tile size    : {0}x{1}", new Object[]{tileSizeX, tileSizeY});
             }
-            int size = Math.max(width, height);
-            int ss = (int) Math.ceil(Math.log(size)/Math.log(2));
-            int tiless = (int) Math.ceil(Math.log(tileSizeX)/Math.log(2));
-            depth = ss-tiless+2;
-            TileSize = tileSizeX * tileSizeY * 24;
+            depth = PyramidBuilder.levelCount(width, height, tileSizeX, tileSizeY);
             if (params.verbose) {
                 LOGGER.log(Level.INFO, "# of scales to be generated : {0}", depth);
             }
@@ -202,7 +197,7 @@ public class X2TIF implements AutoCloseable {
                     }
                 } catch (NullPointerException ex) {}
             }
-            case SVSReader r -> {
+            case HatchSVSReader r -> {
                 Map<String,Object> list = r.getSeriesMetadata();
                 BigDecimal magnification = number(list.get("AppMag"));
                 if (magnification != null) {
@@ -249,7 +244,7 @@ public class X2TIF implements AutoCloseable {
         }
     }
 
-    private int MaxImage(FormatReader reader) {
+    private int MaxImage(RawTileSource reader) {
         int ii = 0;
         int maxseries = 0;
         int maxx = Integer.MIN_VALUE;
@@ -262,10 +257,6 @@ public class X2TIF implements AutoCloseable {
         }
         if (params.verbose) LOGGER.log(Level.INFO, "Max image is series {0}", maxseries);
         return maxseries;
-    }
-
-    public int effSize(int tileX, int width) {
-        return (tileX + tileSizeX) < width ? tileSizeX : width - tileX;
     }
 
     /** TIFF resolution in pixels per cm, or null when the source has no physical pixel size. */
@@ -291,10 +282,10 @@ public class X2TIF implements AutoCloseable {
     }
 
     /** JPEG structure of the first tile the source stores; every other tile must match it. */
-    private JPEGTools.JpegInfo firstStoredTile(byte[] rawbuffer) throws FormatException, IOException {
+    private JPEGTools.JpegInfo firstStoredTile() throws FormatException, IOException {
         for (int y=0; y<layout.tilesDown(); y++) {
             for (int x=0; x<layout.tilesAcross(); x++) {
-                byte[] raw = reader.getRawBytes(rawbuffer, 0, y, x);
+                byte[] raw = reader.getRawTile(y, x);
                 if (raw != null) {
                     return JPEGTools.inspect(raw);
                 }
@@ -311,119 +302,109 @@ public class X2TIF implements AutoCloseable {
         int nXTiles = layout.tilesAcross();
         int nYTiles = layout.tilesDown();
         int numtiles = nXTiles*nYTiles;
-        pyramid = new Pyramid(params,nXTiles,nYTiles,tileSizeX,tileSizeY,width,height);
-        pyramid.setSource(inputFile);
-        byte[] rawbuffer = new byte[TileSize+20];
-        JPEGTools.JpegInfo jpeg = firstStoredTile(rawbuffer);
+        JPEGTools.JpegInfo jpeg = firstStoredTile();
         if (jpeg.components() != 3) {
             throw new FormatException("Tiles have " + jpeg.components() + " colour component(s); only RGB JPEG tiles are supported");
         }
-        loci.formats.tiff.IFD ifd = new loci.formats.tiff.IFD();
-        ifd.put(IFD.TILE_WIDTH, tileSizeX);
-        ifd.put(IFD.TILE_LENGTH, tileSizeY);
-        ifd.put(IFD.IMAGE_WIDTH, (long) width);
-        ifd.put(IFD.IMAGE_LENGTH, (long) height);
-        ifd.put(IFD.TILE_OFFSETS, new long[numtiles]);
-        ifd.put(IFD.TILE_BYTE_COUNTS, new long[numtiles]);
+        TiledTiffWriter.Image[] levels = new TiledTiffWriter.Image[depth];
+        levels[0] = writer.addImage(baseIFD(jpeg));
+        int w = width;
+        int h = height;
+        for (int s=1; s<depth; s++) {
+            w = PyramidBuilder.half(w);
+            h = PyramidBuilder.half(h);
+            if (params.verbose) {
+                LOGGER.log(Level.INFO, "Level {0}: {1}x{2}", new Object[]{s, w, h});
+            }
+            levels[s] = writer.addImage(reducedIFD(w, h));
+        }
+        // the cores are shared between the -fp file processors
+        int threads = Math.max(1, Runtime.getRuntime().availableProcessors() / Math.max(1, params.fp));
+        try (PyramidBuilder pyramid = new PyramidBuilder(width, height, tileSizeX, tileSizeY, depth, params.quality, threads,
+                (level, col, row, data) -> levels[level].writeTile(col, row, data))) {
+            byte[] blank = null;
+            BufferedImage blankImage = null;
+            int missing = 0;
+            for (int y=0; y<nYTiles; y++) {
+                if (params.verbose) {
+                    float perc = 100f*y/nYTiles;
+                    LOGGER.log(Level.INFO,String.format("%.2f%%",perc));
+                }
+                for (int x=0; x<nXTiles; x++) {
+                    byte[] raw = reader.getRawTile(y, x);
+                    if (raw == null) {
+                        // not stored in the source: stand in a background tile encoded like the real ones
+                        if (blank == null) {
+                            blank = JPEGTools.blankTile(tileSizeX, tileSizeY, layout.background(), jpeg, params.quality);
+                            blankImage = JPEGTools.decode(blank);
+                        }
+                        levels[0].writeTile(x, y, blank);
+                        pyramid.add(x, y, blankImage);
+                        missing++;
+                    } else {
+                        if (!jpeg.equals(JPEGTools.inspect(raw))) {
+                            throw new FormatException("Tile [" + y + "," + x + "] is encoded as " + JPEGTools.inspect(raw)
+                                + " but the first tile as " + jpeg + "; one TIFF level cannot describe both");
+                        }
+                        levels[0].writeTile(x, y, raw);
+                        pyramid.add(x, y, raw);
+                    }
+                }
+            }
+            pyramid.finish();
+            if (missing > 0) {
+                LOGGER.log(Level.INFO, "{0} of {1} tiles are not stored in {2}; filled with background colour",
+                    new Object[]{missing, numtiles, inputFile});
+            }
+        }
+        writer.finish();
+    }
+
+    /** Tags of the full-resolution level, which carries the source JPEG streams verbatim. */
+    private IFD baseIFD(JPEGTools.JpegInfo jpeg) {
+        IFD ifd = tiledIFD(width, height);
         if (xmp!=null) {
             ifd.putIFDValue(700, byte2short(xmp.getXMPString().getBytes(StandardCharsets.UTF_8)));
         }
-        ifd.put(IFD.COMPRESSION, 7);
-        ifd.put(IFD.BITS_PER_SAMPLE, new int[] {8, 8, 8});
-        ifd.put(IFD.SAMPLES_PER_PIXEL, 3);
-        ifd.put(IFD.PLANAR_CONFIGURATION, 1);
         ifd.put(IFD.SOFTWARE, Hatch.software);
         ifd.putIFDValue(IFD.IMAGE_DESCRIPTION, "");
-        ifd.put(IFD.ORIENTATION, 1);
         if (px != null && py != null) {
             ifd.put(IFD.X_RESOLUTION, px);
             ifd.put(IFD.Y_RESOLUTION, py);
             ifd.put(IFD.RESOLUTION_UNIT, 3);
         }
-        ifd.put(IFD.SAMPLE_FORMAT, new int[] {1, 1, 1});
-        // the base level carries the source's JPEG streams, so its tags must describe them
+        // the tags must describe the copied JPEG streams
         if (jpeg.rgb()) {
             ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.RGB.getCode());
         } else {
             ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
             ifd.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {jpeg.hSubsampling(), jpeg.vSubsampling()});
         }
-        byte[] blank = null;
-        int missing = 0;
-        for (int y=0; y<nYTiles; y++) {
-            if (params.verbose) {
-                float perc = 100f*y/nYTiles;
-                LOGGER.log(Level.INFO,String.format("%.2f%%",perc));
-            }
-            for (int x=0; x<nXTiles; x++) {
-                byte[] raw = reader.getRawBytes(rawbuffer, 0, y, x);
-                if (raw == null) {
-                    // not stored in the source: stand in a background tile encoded like the real ones
-                    if (blank == null) {
-                        blank = JPEGTools.blankTile(tileSizeX, tileSizeY, layout.background(), jpeg, params.quality);
-                    }
-                    raw = blank;
-                    missing++;
-                } else if (!jpeg.equals(JPEGTools.inspect(raw))) {
-                    throw new FormatException("Tile [" + y + "," + x + "] is encoded as " + JPEGTools.inspect(raw)
-                        + " but the first tile as " + jpeg + "; one TIFF level cannot describe both");
-                }
-                // with no reduced levels to follow, the last base tile must terminate the IFD chain
-                boolean last = (depth <= 1) && (x == nXTiles-1) && (y == nYTiles-1);
-                writer.writeIFDStrips(ifd, raw, last, x*tileSizeX, y*tileSizeY);
-                pyramid.put(raw, x, y);
-            }
-        }
-        if (missing > 0) {
-            LOGGER.log(Level.INFO, "{0} of {1} tiles are not stored in {2}; filled with background colour",
-                new Object[]{missing, numtiles, inputFile});
-        }
-        if (params.verbose) {
-            time.Cumulative();
-            LOGGER.log(Level.INFO,"Generate image pyramid...");
-        }
-        ifd.remove(700);
-        ifd.remove(IFD.Y_CB_CR_SUB_SAMPLING);
-        ifd.remove(IFD.IMAGE_DESCRIPTION);
-        ifd.remove(IFD.SOFTWARE);
-        ifd.remove(IFD.X_RESOLUTION);
-        ifd.remove(IFD.Y_RESOLUTION);
+        return ifd;
+    }
+
+    /** Tags of a reduced level, whose tiles {@link JPEGTools#encode} writes as JFIF YCbCr 4:2:0. */
+    private IFD reducedIFD(int w, int h) {
+        IFD ifd = tiledIFD(w, h);
+        ifd.put(IFD.NEW_SUBFILE_TYPE, 1L);
+        ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
+        ifd.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {2, 2});
+        return ifd;
+    }
+
+    private IFD tiledIFD(int w, int h) {
+        IFD ifd = new IFD();
+        ifd.put(IFD.IMAGE_WIDTH, (long) w);
+        ifd.put(IFD.IMAGE_LENGTH, (long) h);
+        ifd.put(IFD.TILE_WIDTH, tileSizeX);
+        ifd.put(IFD.TILE_LENGTH, tileSizeY);
         ifd.put(IFD.COMPRESSION, 7);
-        for (int s=1;s<depth;s++) {
-            if (params.verbose) {
-                LOGGER.log(Level.INFO, "Level : {0} of {1}", new Object[]{s, depth});
-            }
-            if (params.verbose) {
-                LOGGER.log(Level.INFO,"Lump...");
-            }
-            pyramid.Lump();
-            if (params.verbose) {
-                LOGGER.log(Level.INFO,"Shrink...");
-            }
-            pyramid.Shrink();
-            if (params.verbose) {
-                LOGGER.log(Level.INFO, "{0} X {1}", new Object[]{pyramid.gettilesX(), pyramid.gettilesY()});
-                LOGGER.log(Level.INFO, "Resolution S={0} {1}x{2}", new Object[]{s, pyramid.getWidth(), pyramid.getHeight()});
-            }
-            writer.nextImage();
-            if (params.verbose) {
-                LOGGER.log(Level.INFO, "Writing level {0}...", s);
-            }
-            numtiles = pyramid.gettilesX()*pyramid.gettilesY();
-            ifd.put(IFD.NEW_SUBFILE_TYPE, 1L);
-            ifd.put(IFD.IMAGE_WIDTH, (long) pyramid.getWidth());
-            ifd.put(IFD.IMAGE_LENGTH, (long) pyramid.getHeight());
-            ifd.put(IFD.TILE_OFFSETS, new long[numtiles]);
-            ifd.put(IFD.TILE_BYTE_COUNTS, new long[numtiles]);
-            // reduced levels are re-encoded by ImageIO as JFIF YCbCr 4:2:0 (the TIFF default subsampling)
-            ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
-            for (int y=0; y<pyramid.gettilesY(); y++) {
-                for (int x=0; x<pyramid.gettilesX(); x++) {
-                    byte[] b = pyramid.GetImageBytes(x, y);
-                    writer.writeIFDStrips(ifd, b, ((x==(pyramid.gettilesX()-1))&&(y==(pyramid.gettilesY()-1))&&(s==depth-1)), x*tileSizeX, y*tileSizeY);
-                }
-            }
-        }
+        ifd.put(IFD.BITS_PER_SAMPLE, new int[] {8, 8, 8});
+        ifd.put(IFD.SAMPLES_PER_PIXEL, 3);
+        ifd.put(IFD.PLANAR_CONFIGURATION, 1);
+        ifd.put(IFD.ORIENTATION, 1);
+        ifd.put(IFD.SAMPLE_FORMAT, new int[] {1, 1, 1});
+        return ifd;
     }
 
     /**
@@ -436,7 +417,7 @@ public class X2TIF implements AutoCloseable {
         Path part = target.resolveSibling(target.getFileName() + ".part");
         Files.deleteIfExists(part);
         try {
-            writer = new HatchWriter(part.toString());
+            writer = new TiledTiffWriter(part.toString());
             readWriteTiles();
             writer.close();
             writer = null;

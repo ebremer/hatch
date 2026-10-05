@@ -139,9 +139,9 @@ class SafeOutputTest {
         Path dest = dir.resolve("out.tif");
         Files.write(dest, OLD_OUTPUT);
         HatchParameters p = params(src, dest);
-        p.quality = 1.5f; // rejected by the JPEG encoder only after the base level has been written
+        p.quality = 1.5f; // rejected by the JPEG encoder only once base tiles have been written
 
-        assertThrows(RuntimeException.class, () -> {
+        assertThrows(java.io.IOException.class, () -> {
             try (X2TIF x = new X2TIF(p, src.toString(), dest.toString(), null)) {
                 x.Execute();
             }

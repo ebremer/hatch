@@ -13,7 +13,7 @@ of the output). All other items come from reading the code; each cites `file:lin
 - **P3:** cleanup, build hygiene, docs, conventions.
 
 **Counts:** 6 × P0 · 19 × P1 · 16 × P2 · 43 × P3  
-**Done:** all P0 and P1 items, plus the P3 `HatchWriter` leak and test-fixture fix. Regression tests are in `SafeOutputTest`, `InputHandlingTest`, `CliTest`, `JPEGToolsTest` and `HatchConversionTest`.
+**Done:** all P0, P1 and P2 items, plus the P3 items checked below (several became moot when the reader forks and the old pyramid/writer classes were deleted). Regression tests are in `SafeOutputTest`, `InputHandlingTest`, `CliTest`, `JPEGToolsTest`, `HatchConversionTest`, `PyramidTest`, `TiffTilesTest` and `ValidateTest`.
 
 **Suggested order of work**
 1. **Safety PR (all P0).** Path guards (same file, nested dest, name collisions), write to a temp file and atomically move, an `X2TIF` factory that fails cleanly, and the depth == 1 IFD terminator.
@@ -194,13 +194,15 @@ of the output). All other items come from reading the code; each cites `file:lin
 
 ## P2: Performance, scalability, robustness
 
-- [ ] **Writing tiles is O(N²) because the whole IFD is rewritten after every tile.** **[verified]**
+- [x] **Writing tiles is O(N²) because the whole IFD is rewritten after every tile.** **[verified]**
+  *Done:* `TiledTiffWriter` appends tiles and keeps offsets and byte counts in memory. Each IFD is written once, when the file is finished, last level first so each IFD already points at its successor; then the header is pointed at the first. There is no "last tile" flag any more (the cause of the P0 depth == 1 bug). `HatchWriter`/`HatchSaver` are deleted.
   `HatchSaver.java:38-72`. Every tile clones both `long[numTiles]` arrays and rewrites the full IFD, including both arrays.
   Measured writer-only cost: 1,024 tiles take 0.5 s, 4,096 take 1.9 s, and 16,384 take **12.4 s**.
   Extrapolated, a ~120k-tile slide (100k×80k px at 256² tiles) spends about **13 minutes** on IFD rewrites alone.
   *Fix:* append tiles while filling the offset/count arrays in memory, then write the IFD once per level. Either reserve its slot up front and rewrite it once, or write it after the tiles and patch the previous level's next-IFD pointer.
 
-- [ ] **Each pyramid level is JPEG-encoded three times, compounding generation loss.**
+- [x] **Each pyramid level is JPEG-encoded three times, compounding generation loss.**
+  *Done:* `PyramidBuilder` computes each level from the *pixels* of the level above (2×2 box filter) before they are encoded, so every reduced tile is encoded exactly once and never re-decoded. **[verified]** On CMU-1 the reduced levels are closer to an exact reduction of the source than before at the same quality (mean |diff| L1 0.54 vs 0.58, L3 0.78 vs 0.98, L5 3.62 vs 4.49).
   Per level:
   1. `Lump` encodes a 2T×2T merged JPEG (`Pyramid.java:292`).
   2. `Shrink` decodes it, downsizes it and encodes again (`Pyramid.java:225-236`).
@@ -209,63 +211,77 @@ of the output). All other items come from reading the code; each cites `file:lin
   Level *k*'s output has therefore been through 2*k*+1 lossy encodes where *k* would do, and CPU use is roughly 3× what it needs to be.
   *Fix:* merge and downsample in one step: decode 4 tiles, draw them scaled into a T×T image, encode once. Write and keep those same bytes.
 
-- [ ] **All of level 0 is held in heap.** `X2TIF.java:415` → `Pyramid.put`.
+- [x] **All of level 0 is held in heap.** `X2TIF.java:415` → `Pyramid.put`.
+  *Done:* base tiles stream through. Each reduced level holds one tile row of pixels, about 3 × tile height × base width bytes over all levels (~80 MB for a 100k-px-wide slide with 256-px tiles), independent of the slide's height.
   Every compressed level-0 tile stays in memory until level 1 is built. That is multiple GB for large slides, multiplied by `-fp`.
   *Fix:* build level 1 incrementally from pairs of tile rows as they stream in, or read level 0 back from the output file. At minimum, document `-Xmx` sizing.
 
-- [ ] **Pyramid work runs on unbounded virtual threads.** `Pyramid.java:156, 179`.
+- [x] **Pyramid work runs on unbounded virtual threads.** `Pyramid.java:156, 179`.
+  *Done:* a fixed pool of `availableProcessors() / fp` daemon platform threads; at most two base tile rows of work are queued at a time.
   One virtual thread per tile for CPU-bound, JNI-pinned JPEG work has no backpressure, and `-fp N` multiplies it.
   *Fix:* use a bounded platform pool sized to `availableProcessors()/fp`.
 
-- [ ] **Default `-q 1.0` is JPEG quality 100.** `HatchParameters.java:52`.
+- [x] **Default `-q 1.0` is JPEG quality 100.** `HatchParameters.java:52`.
+  *Done:* the default is 0.9, and the help text says that only the reduced levels are re-encoded. **[verified]** PC380089's output shrinks from 471 MB to 266 MB.
   This makes the pyramid levels several times larger than needed. Consider defaulting to 0.85–0.90 and documenting the trade-off.
 
-- [ ] **Edge tiles are padded with black and the padding bleeds in.** `Pyramid.java:259-260`.
+- [x] **Edge tiles are padded with black and the padding bleeds in.** `Pyramid.java:259-260`.
+  *Done:* filter reads are clamped to the image, so padding is never sampled, and the padding of reduced tiles repeats the edge pixels. **[verified]** On CMU-1 the step between the last two pixel columns/rows of the smallest level was 124 grey levels; it is now 2.
   `Merge` fills with black, so pixels on the image's right and bottom edges get blended with black (or with the source's padding garbage) as levels are downsampled.
   *Fix:* clamp/replicate edge pixels, or crop to the real extent before scaling.
 
-- [ ] **Logging is re-initialized by several classes.** `Hatch.java:28-35`, `Hatch.java:190-197`, `X2TIF.java:57-64`.
+- [x] **Logging is re-initialized by several classes.** `Hatch.java:28-35`, `Hatch.java:190-197`, `X2TIF.java:57-64`.
+  *Done:* `Hatch.run` reads `logging.properties` once; the static initializers are gone. The error log is opt-in: `-log FILE` appends SEVERE messages to FILE, and nothing writes `./error.log` any more.
   Each static initializer calls `LogManager.readConfiguration()`, which *resets* all levels and handlers and undoes the `-v` level set in `main`.
   The `FileHandler` always creates `./error.log` in the current working directory **[verified]**; this fails in read-only directories and collides between concurrent runs.
   *Fix:* configure logging once in `main`, and make the log file opt-in (e.g. `-log <file>`).
 
-- [ ] **`Validate` only checks image dimensions.** `Validate.java:28-65`.
+- [x] **`Validate` only checks image dimensions.** `Validate.java:28-65`.
+  *Done:* `Validate.check` walks the IFD chain itself (offsets inside the file, no loops, terminated), checks that every tile is stored inside the file, decodes the last tile of each level, checks Photometric/YCbCrSubSampling against that tile's JPEG markers, and checks that each level halves the one before and the smallest fits in 1024×1024. **[verified]** It passes all new real-data outputs (10–200 ms each) and rejects an old output of a 4:2:2 VSI ("tags say Y_CB_CR [1, 1] but the tiles are … 2, 1 …"), so `-r` re-converts those. The TwelveMonkeys TIFF plugin it used is no longer a dependency.
   It checks the width/height of the first and last image and nothing else. It never confirms tile offsets lie within the file or that any tile decodes, so a truncated file can pass.
   *Fix:* also check each IFD's offsets+counts ≤ file length, decode one tile per level, and check the chain terminates.
 
-- [ ] **Depth uses floating-point `log` and only the tile width.** `X2TIF.java:146-149`.
+- [x] **Depth uses floating-point `log` and only the tile width.** `X2TIF.java:146-149`.
+  *Done:* `PyramidBuilder.levelCount` halves with integers and uses both tile dimensions. It keeps the existing rule (halve until the image fits in *half* a tile), so level counts are unchanged for square power-of-two tiles; `PyramidTest` checks this against the old formula.
   `Math.log(x)/Math.log(2)` can overshoot for exact powers of two, and `tileSizeY` is ignored.
   *Fix:* loop with integer halving until both dimensions are ≤ one tile.
 
-- [ ] **VSI tile reads open a new file stream per tile and scan it byte by byte.** `CellSensReader.java:1026`, `JPEGTools.java:23-44`.
+- [x] **VSI tile reads open a new file stream per tile and scan it byte by byte.** `CellSensReader.java:1026`, `JPEGTools.java:23-44`.
+  *Done:* one `FileChannel` per ETS file, closed with the reader. Each tile is one positional read of the chunk table's byte count, trimmed to the end of the JPEG stream, which `JPEGTools.streamLength` finds by walking the markers (an EOI inside an APPn segment no longer cuts the tile short). `FindFirstEOI` is gone. **[verified]** All 58,349 level-0 tiles of the four previously validated VSIs are byte-identical to the P1 outputs.
   Each tile opens a new `RandomAccessInputStream`, which buffers 1 MiB at offset 0 and again after the seek. The code then walks to the EOI marker with `readByte()`.
   That is about 2 MiB of copying plus an open/close per ~100 KB tile, or tens of GB of buffer fills for a 40k-tile slide.
   The chunk table's per-tile `nBytes` is read and thrown away (`CellSensReader.java:1254`).
   `FindFirstEOI` can also stop early at an `FFD9` inside an APPn segment (e.g. an EXIF thumbnail), which truncates the tile.
   *Fix:* keep one stream per ETS file (closed in `close()`), store `nBytes`, and `readFully` exactly that many bytes. Keep the EOI scan only as a fallback.
 
-- [ ] **TIFF/SVS tile reads are O(N²): every tile does work proportional to the total tile count.**
+- [x] **TIFF/SVS tile reads are O(N²): every tile does work proportional to the total tile count.**
+  *Done:* `JpegTiffTiles` resolves the offsets, byte counts and JPEGTables prefix once per IFD; each tile is then one positional read. **[verified]** TCGA-BH-A0BG (99,814 base tiles) converts in 11 s (31 s at `-q 1.0`), down from 565 s.
   For each tile, `getStripByteCounts()` copies the whole count array (`IFD.java:836-846`). For BigTIFF it first re-reads the entire `TileByteCounts` array from disk through `OnDemandLongArray.toArray()`. `getStripOffsets()` loops over every offset (`IFD.java:774-778`), and is called from `TiffParser.java:1407, 1426`.
   A ~140k-tile slide pushes roughly 150 GB through memory this way.
   *Fix:* resolve offsets/counts once per IFD, or use `OnDemandLongArray.get(i)` for both. Cache the JPEGTables + APP14 prefix per IFD.
 
-- [ ] **VSI tile lookup is O(N²).** `CellSensReader.java:996`.
+- [x] **VSI tile lookup is O(N²).** `CellSensReader.java:996`.
+  *Done:* `TileCoordinate.hashCode`, and one `HashMap` from coordinate to chunk per ETS file (the first chunk wins, as with the linear search).
   `ArrayList.indexOf(TileCoordinate)` scans every chunk (all resolutions and planes) for each tile: about 6×10⁸ `equals` calls for 30k tiles. `TileCoordinate` (`CellSensReader.java:2503-2539`) has no `hashCode`.
   *Fix:* add `hashCode`, and build a `HashMap<TileCoordinate,Integer>` once in `parseETSFile`.
 
-- [ ] **CellSens errors are swallowed and streams leak.**
+- [x] **CellSens errors are swallowed and streams leak.**
+  *Done:* `readTags` logs a warning with the cause; like upstream it carries on, since the tags are descriptive metadata. `reopenFile` closes the parser it replaces. A failing `initFile` closes the reader, so the `.vsi` is released (`TiffTilesTest`).
   - `readTags` swallows every exception (`CellSensReader.java:1980-1982`), including "Invalid dimension", so metadata is silently truncated.
   - `reopenFile` replaces `parser` without closing it (`CellSensReader.java:558`).
   - A failed `initFile` leaves the `.vsi` open; X2TIF never calls `close()` on that path, and on Windows this locks the file.
 
-- [ ] **TIFF reader errors are swallowed and streams leak.**
+- [x] **TIFF reader errors are swallowed and streams leak.**
+  *Done:* the forked readers are gone (next item). `HatchTiffReader` and `HatchSVSReader` close themselves when `initFile` fails, and the tile path does not depend on `initTiffParser`.
   - `MinimalTiffReader.java:312-314` logs a `FormatException` at SEVERE and carries on.
   - `initTiffParser` (`MinimalTiffReader.java:744-752`) logs the `IOException` and then builds `new TiffParser(null)`.
   - `FormatReader.setId` (`FormatReader.java:1415`) doesn't close the reader if `initFile` throws.
 
   *Fix:* rethrow, and close on init failure.
 
-- [ ] **Replace the reader forks with thin subclasses of upstream Bioformats.** About 4.5k lines of the forked `FormatReader`/`MinimalTiffReader`/`BaseTiffReader`/`TiffReader`/`SVSReader`/`SubResolutionFormatReader` exist only to add `getRawBytes`.
+- [x] **Replace the reader forks with thin subclasses of upstream Bioformats.**
+  *Done:* deleted the forked `FormatReader`, `MinimalTiffReader`, `BaseTiffReader`, `TiffReader`, `SVSReader`, `SubResolutionFormatReader`, `TiffParser`, `IFD`, `IFDList`, `TiffCompression` and `NeoJPEGCodec` (~7.5k lines). `HatchTiffReader` and `HatchSVSReader` subclass the upstream readers; `CellSensReader` stays forked but extends upstream `FormatReader`. All three implement `RawTileSource`; the TIFF/SVS tile reading lives in `JpegTiffTiles`. The fork's two `TiffParser` fixes are not needed: the tile path reads the offset arrays itself, and image IFDs always have more than one entry.
+  **Behaviour change:** SVS series numbers now match upstream (and `showinf`). The striped thumbnail is no longer a series, so `-s` indices of the label and macro images drop by one (CMU-1: label 4 → 3, macro 5 → 4). The thumbnail could not be converted anyway (it is striped). About 4.5k lines of the forked `FormatReader`/`MinimalTiffReader`/`BaseTiffReader`/`TiffReader`/`SVSReader`/`SubResolutionFormatReader` exist only to add `getRawBytes`.
   - Upstream `loci.formats.in.SVSReader.openCompressedBytes(no, col, row)` already returns the JPEGTables plus the verbatim tile with bounds checks; only the APP14 insertion needs adding, via the protected `getIFD(no)`.
   - For TIFF, subclass `loci.formats.in.TiffReader` and use the protected `ifds`, `tiffParser` and `getCompressedByteCount`.
   - Watch out: upstream `copyTile` over-reads 2 bytes past the tile end, and returns an empty array for missing tiles.
@@ -275,7 +291,8 @@ of the output). All other items come from reading the code; each cites `file:lin
     - Carry forward the fork's two genuine fixes, which 8.3.0 lacks: the `(long) count * bpe` overflow cast (`TiffParser.java:459`) and keeping 1-entry IFDs (`TiffParser.java:429`).
     - `TiffParser` is not thread-safe (shared stream, mutable `codecOptions`). That is fine for today's one-reader-per-job design, but document it.
 
-- [ ] **`JPEGBuffer.GetBufferImage` turns decode failures into `null`.** `JPEGBuffer.java:31-38`.
+- [x] **`JPEGBuffer.GetBufferImage` turns decode failures into `null`.** `JPEGBuffer.java:31-38`.
+  *Done:* `JPEGBuffer` is gone. Decoding is `JPEGTools.decode`, and a failure surfaces as an `IOException` that names the tile and keeps the cause.
   *Progress:* `Dump2ByteArray` now throws `UncheckedIOException` with the cause and disposes the writer in `finally`. `GetBufferImage` still returns null.
   The caller then fails with an NPE or `Error("NW TILE NULL!!!")` (`Pyramid.java:294`), and the original cause is lost.
   `JPEGTools.Dump2ByteArray` wraps exceptions in `new Error(msg)`, also without the cause (`JPEGTools.java:60-62`), and `dispose()` isn't in a `finally`.
@@ -295,7 +312,7 @@ of the output). All other items come from reading the code; each cites `file:lin
 ### Native image
 - [ ] `-march=native` (`pom.xml:210`) makes the distributed binary crash (SIGILL) on older CPUs. Use `-march=compatibility` or `x86-64-v3` for release builds.
 - [ ] `<debug>true</debug>` and `<verbose>true</verbose>` in the release profile bloat the binary and the logs (`pom.xml:201, 203`).
-- [ ] `config/reachability-metadata.json` is stale. It was traced on Linux (X11/XRender entries) for Jena 5.2/Bioformats 7.x, and it lacks `SingleLineFormatter`, which `LogManager` loads reflectively. Regenerate it with the tracing agent while running the test suite, per OS.
+- [ ] `config/reachability-metadata.json` is stale. Since P2 it also lists TwelveMonkeys classes that are no longer on the classpath, and lacks the new classes. It was traced on Linux (X11/XRender entries) for Jena 5.2/Bioformats 7.x, and it lacks `SingleLineFormatter`, which `LogManager` loads reflectively. Regenerate it with the tracing agent while running the test suite, per OS.
 - [ ] `--add-reads edu.stonybrook.bmi.hatch=ALL-UNNAMED` (`pom.xml:179-180`) refers to a module that doesn't exist (there is no `module-info.java`). Remove it.
 
 ### Metadata (XMP)
@@ -307,18 +324,18 @@ of the output). All other items come from reading the code; each cites `file:lin
 
 ### Dead code and clarity
 - [ ] `X2TIF`: the OME-XML `meta` block (`X2TIF.java:154-169`) is built and never used, as are the `compression`/`method` switches and the unreachable `openCompressedBytes` branch (`X2TIF.java:388-417`), `effSize`, and ~25 lines of commented-out code.
-- [ ] `Pyramid`: remove the unused `put(byte[],…,float)` and `put(BufferedImage,…,float)` overloads, the `xscale` field, and the public mutable `DownScale` (make it `static final`).
-- [ ] `Pyramid.java:157-163`: the `Shrink` corner check can never fire, because `Merge` always produces 2T×2T tiles. It decodes the corner tile twice per level, and if it ever did fire it would leave `tilesX` and `width` inconsistent. Remove it.
-- [ ] `HatchSaver.java:55-56`: two no-op `seek` calls left over from `TiffSaver`.
-- [ ] `HatchParameters` has no `toString()`, so `Hatch.java:106` logs an object hash.
+- [x] *(moot: `Pyramid` was replaced by `PyramidBuilder`)* `Pyramid`: remove the unused `put(byte[],…,float)` and `put(BufferedImage,…,float)` overloads, the `xscale` field, and the public mutable `DownScale` (make it `static final`).
+- [x] *(moot)* `Pyramid.java:157-163`: the `Shrink` corner check can never fire, because `Merge` always produces 2T×2T tiles. It decodes the corner tile twice per level, and if it ever did fire it would leave `tilesX` and `width` inconsistent. Remove it.
+- [x] *(moot: `HatchSaver` was deleted)* `HatchSaver.java:55-56`: two no-op `seek` calls left over from `TiffSaver`.
+- [x] `HatchParameters` has no `toString()`, so `Hatch.java:106` logs an object hash. *Done:* that log line was removed.
 - [ ] `StopWatch` prints to `System.out` while everything else goes through the logger.
 - [ ] Empty `catch (NullPointerException ex) {}` at `X2TIF.java:228` hides real metadata bugs. Use explicit null checks.
-- [ ] Rename PascalCase methods (`Execute`, `Lump`, `Shrink`, `GetImageBytes`, `FindFirstEOI`, `Traverse`, `MaxImage`, `SetPPS`, `FindMeta`) to Java camelCase.
+- [ ] Rename PascalCase methods (`Execute`, `Traverse`, `MaxImage`, `SetPPS`, `FindMeta`) to Java camelCase. (`Lump`, `Shrink`, `GetImageBytes` and `FindFirstEOI` are gone.)
 - [ ] Extension handling assumes 4-character extensions (`Hatch.java:63, 91`). Batch mode skips `.tiff` even though `TiffReader` accepts it, and `-dest out.tiff` is treated as a directory (`Hatch.java:126`).
 - [x] `HatchWriter` constructor leaks the `RandomAccessOutputStream` if `writeHeader()` throws (`HatchWriter.java:19-27`).
 
 ### Licensing
-- [ ] Restore the upstream copyright/license headers that were stripped from forked files: `CellSensReader` (GPL), `SVSReader`, `TiffParser`, `TiffCompression`, `TiffReader`. `NeoJPEGCodec.decompress` is copied from Bioformats `JPEGCodec`, so it needs the BSD notice too. BSD clause 1 requires keeping the notice. Add a `NOTICE` file listing what was modified.
+- [ ] Restore the upstream GPL copyright/license header stripped from `CellSensReader`, the one remaining forked file, and add a `NOTICE` file listing what was modified. (The other forks were deleted in P2.)
 
 ### Forked Bioformats readers
 - [ ] **`CellSensReader` was forked from an older upstream and is missing later fixes:**
@@ -331,28 +348,29 @@ of the output). All other items come from reading the code; each cites `file:lin
   - `getAvailableOptions`, so `cellsens.fail_on_missing_ets` can't be set
 
   Rebase it on 8.3.0, or better, subclass the upstream reader and add only `getRawBytes`.
-- [ ] **Regression vs upstream in the `FormatReader` fork.** `FormatReader.java:1282-1283` uses `core.get(i).resolutionCount` where upstream uses `core.get(index)`. It is wrong in non-flattened mode; latent today, but `CellSensReader` extends this class directly. Revert it.
-- [ ] `MinimalTiffReader.java:533` dropped upstream's typed `getIFDValue(NEW_SUBFILE_TYPE, Number.class)`, so a malformed value now throws `ClassCastException`.
-- [ ] **`SVSReader` is forked from a pre-8.x upstream.** The fork is missing:
+- [x] *(moot: `CellSensReader` now extends upstream `FormatReader`)* **Regression vs upstream in the `FormatReader` fork.** `FormatReader.java:1282-1283` uses `core.get(i).resolutionCount` where upstream uses `core.get(index)`. It is wrong in non-flattened mode; latent today, but `CellSensReader` extends this class directly. Revert it.
+- [x] *(moot: fork deleted)* `MinimalTiffReader.java:533` dropped upstream's typed `getIFDValue(NEW_SUBFILE_TYPE, Number.class)`, so a malformed value now throws `ClassCastException`.
+- [x] *(moot: `HatchSVSReader` subclasses upstream)* **`SVSReader` is forked from a pre-8.x upstream.** The fork is missing:
   - NewSubfileType-based label/macro detection
   - the label/macro index fix-up
   - `removeThumbnail`, so the striped thumbnail is kept as an extra "resolution"
   - Left/Top
 
   `getMagnification()` (`SVSReader.java:598-600`) unboxes null into an NPE, where upstream returns NaN.
-- [ ] `TiffReader` dropped `m.orderCertain = true` (looks accidental) and has a redundant `getIFDs()` override. `openCompressedBytes` always throws because the upstream `ICompressedTileReader` implementation was removed.
-- [ ] `getRawBytes(byte[] rawbuffer, …)`: the TIFF/SVS paths ignore `rawbuffer` (`MinimalTiffReader.java:315` passes `null`), so X2TIF's `tileW*tileH*24` buffer is used only by VSI.
-- [ ] **JPEG-table splicing is fragile** (`TiffParser.java:1386, 1438-1456`).
+- [x] *(moot: fork deleted)* `TiffReader` dropped `m.orderCertain = true` (looks accidental) and has a redundant `getIFDs()` override. `openCompressedBytes` always throws because the upstream `ICompressedTileReader` implementation was removed.
+- [x] *(moot: replaced by `RawTileSource.getRawTile(row, col)`)* `getRawBytes(byte[] rawbuffer, …)`: the TIFF/SVS paths ignore `rawbuffer` (`MinimalTiffReader.java:315` passes `null`), so X2TIF's `tileW*tileH*24` buffer is used only by VSI.
+- [x] **JPEG-table splicing is fragile** (`TiffParser.java:1386, 1438-1456`).
+  *Done* in `JpegTiffTiles`: `byte[]` or `short[]` tables, SOI/EOI checked on the tables and SOI on each tile, tables under 4 bytes treated as absent. `TiffTilesTest` splices synthetic Aperio-style tables and checks the pixels.
   - A BYTE-typed `JPEGTables` tag comes back as `short[]`, and a count of 1 comes back as `Byte`; both throw `ClassCastException`.
   - Tables shorter than 2 bytes give a negative `arraycopy` length.
   - Nothing checks the tables' FFD8…FFD9 markers or the tile's SOI.
 
   Accept `byte[]` or `short[]`, validate the markers, and treat tables under 4 bytes as absent. (The splice arithmetic itself is correct.)
-- [ ] **Delete `NeoJPEGCodec` and use `loci.formats.codec.JPEGCodec`.**
+- [x] **Delete `NeoJPEGCodec` and use `loci.formats.codec.JPEGCodec`.** *Done.*
   - In `decompress`, the SOI marker scan never matches: it compares signed `read()` results with `0xff`/`0xd8` (`NeoJPEGCodec.java:63-68`).
   - `Math.max(0, cb-128)` throws away negative chroma (`NeoJPEGCodec.java:109-110`; also an upstream bug).
   - `compress` is dead code: it hard-codes quality 0.7, forces `channels = 3`, and swallows `IOException`.
-- [ ] **`TiffParser` regressions vs upstream** (on paths conversion doesn't use today):
+- [x] *(moot: fork deleted)* **`TiffParser` regressions vs upstream** (on paths conversion doesn't use today):
   - single BYTE values come back signed (`TiffParser.java:530`)
   - ZSTD was removed from `TiffCompression`, so a Zstd TIFF throws `EnumException`
   - `getTile` was restricted to JPEG (`TiffParser.java:706`), which breaks `getSamples` for LZW/Deflate IFDs, e.g. the VSI overview read at `CellSensReader.java:549`
@@ -365,7 +383,7 @@ of the output). All other items come from reading the code; each cites `file:lin
 
 ### Tests and docs
 - [ ] Add regression tests for every P0/P1 item above: CLI path logic (same file, nested dest, collisions, `-o`/`-r`), depth == 1, missing calibration, non-JPEG input rejection, exit codes.
-- [ ] Extend the synthetic fixtures. Today they never produce JPEGTables (the main Aperio path), sparse/zero-byte tiles, BigTIFF input, RGB photometric, a striped first IFD or an uncalibrated VSI, and only tile (0,0) is byte-compared.
+- [ ] Extend the synthetic fixtures. They still never produce a striped first IFD, a classic (non-Big) TIFF or an uncalibrated VSI. *Progress:* JPEGTables, sparse tiles, RGB photometric and truncated files are now covered (`TiffTilesTest`, `InputHandlingTest`).
 - [ ] Add small real SVS and VSI fixtures, e.g. OpenSlide's freely licensed test slides (`CMU-1-Small-Region.svs`). Today only synthetic TIFFs exercise the readers, so the SVS and VSI paths are untested.
 - [ ] Validate outputs with an independent reader in CI (libtiff `tiffinfo`, or Python `tifffile` + `imagecodecs`), not only the project's own `TiffParser`.
 - [x] Fix the test fixture: it declares `YCbCrSubSampling [1,1]` for ImageIO's 4:2:0 JPEGs (`TestFixtures.java:65`).

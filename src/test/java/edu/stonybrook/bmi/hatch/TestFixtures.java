@@ -14,18 +14,23 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import javax.imageio.ImageIO;
+import loci.common.RandomAccessInputStream;
 import loci.formats.FormatException;
+import loci.formats.tiff.IFD;
+import loci.formats.tiff.IFDList;
+import loci.formats.tiff.OnDemandLongArray;
 import loci.formats.tiff.PhotoInterp;
+import loci.formats.tiff.TiffParser;
 import loci.formats.tiff.TiffRational;
 
 /**
  * Generates small, self-contained tiled TIFF "slides" usable as Hatch input.
  *
- * <p>The fixtures are written with {@link HatchWriter} (the same writer Hatch uses
+ * <p>The fixtures are written with {@link TiledTiffWriter} (the same writer Hatch uses
  * for its output) so they land in exactly the dialect the {@code .tif} reading path
  * consumes: tiled, JPEG-compressed (tag 7), one self-contained JPEG per tile, and
- * crucially NO {@code JPEG_TABLES} tag — which is the branch {@code TiffParser.getRawTile}
- * reads verbatim. Slides are synthesized at test time (no binary blobs committed).
+ * NO {@code JPEG_TABLES} tag, so tiles are read verbatim. Slides are synthesized at test
+ * time (no binary blobs committed).
  */
 final class TestFixtures {
 
@@ -34,7 +39,7 @@ final class TestFixtures {
      *
      * @param compression     TIFF compression code: 7 (JPEG tiles) or 1 (uncompressed tiles)
      * @param samples         samples per pixel: 3 (RGB) or 1 (grayscale)
-     * @param skipped         indices of tiles that are not stored (sparse file); never 0
+     * @param skipped         indices of tiles that are not stored (sparse file)
      * @param micronsPerPixel physical pixel size to record, or null for an uncalibrated image
      */
     record Image(int width, int height, int tileSize, int compression, int samples,
@@ -99,6 +104,31 @@ final class TestFixtures {
         return offsets;
     }
 
+    /** Parsed IFDs of a TIFF, read with Bio-Formats' own parser. */
+    static IFDList ifds(File tiff) throws IOException, FormatException {
+        try (RandomAccessInputStream in = new RandomAccessInputStream(tiff.toString())) {
+            IFDList ifds = new TiffParser(in).getMainIFDs();
+            for (IFD ifd : ifds) {
+                // arrays read on demand need the stream, which is about to close
+                for (int tag : new int[] {IFD.TILE_OFFSETS, IFD.TILE_BYTE_COUNTS, IFD.STRIP_OFFSETS, IFD.STRIP_BYTE_COUNTS}) {
+                    if (ifd.get(tag) instanceof OnDemandLongArray lazy) {
+                        ifd.put(tag, lazy.toArray());
+                    }
+                }
+            }
+            return ifds;
+        }
+    }
+
+    /** Tile (row, col) of IFD {@code image} as a standalone JPEG, or null if it is not stored. */
+    static byte[] rawTile(File tiff, int image, int row, int col) throws IOException, FormatException {
+        try (RandomAccessInputStream in = new RandomAccessInputStream(tiff.toString());
+             TileFile file = new TileFile(tiff.toString())) {
+            IFD ifd = new TiffParser(in).getMainIFDs().get(image);
+            return new JpegTiffTiles(file, in, ifd).read(row, col);
+        }
+    }
+
     /** Number of tiles needed to cover {@code dim} pixels at {@code tileSize} (ceiling). */
     static int tileCount(int dim, int tileSize) {
         int n = dim / tileSize;
@@ -116,32 +146,24 @@ final class TestFixtures {
 
     /** Writes the images, in order, as the IFDs of one TIFF. */
     static void write(File dest, Image... images) throws IOException, FormatException {
-        try (HatchWriter writer = new HatchWriter(dest.toString())) {
-            for (int i = 0; i < images.length; i++) {
-                if (i > 0) {
-                    writer.nextImage();
-                }
-                writeImage(writer, images[i], i == images.length - 1);
+        try (TiledTiffWriter writer = new TiledTiffWriter(dest.toString())) {
+            for (Image image : images) {
+                writeImage(writer, image);
             }
+            writer.finish();
         }
     }
 
-    private static void writeImage(HatchWriter writer, Image im, boolean lastImage)
+    private static void writeImage(TiledTiffWriter writer, Image im)
             throws IOException, FormatException {
         int nX = tileCount(im.width(), im.tileSize());
         int nY = tileCount(im.height(), im.tileSize());
-        int numtiles = nX * nY;
-        if (im.skipped().contains(0)) {
-            throw new IllegalArgumentException("tile 0 positions the IFD and cannot be skipped");
-        }
 
-        loci.formats.tiff.IFD ifd = new loci.formats.tiff.IFD();
+        IFD ifd = new IFD();
         ifd.put(IFD.TILE_WIDTH, im.tileSize());
         ifd.put(IFD.TILE_LENGTH, im.tileSize());
         ifd.put(IFD.IMAGE_WIDTH, (long) im.width());
         ifd.put(IFD.IMAGE_LENGTH, (long) im.height());
-        ifd.put(IFD.TILE_OFFSETS, new long[numtiles]);
-        ifd.put(IFD.TILE_BYTE_COUNTS, new long[numtiles]);
         ifd.put(IFD.COMPRESSION, im.compression());
         ifd.put(IFD.SAMPLES_PER_PIXEL, im.samples());
         ifd.put(IFD.PLANAR_CONFIGURATION, 1);
@@ -168,10 +190,7 @@ final class TestFixtures {
             ifd.put(IFD.Y_RESOLUTION, new TiffRational(pixelsPerCm, 1));
         }
 
-        int lastStored = numtiles - 1;
-        while (im.skipped().contains(lastStored)) {
-            lastStored--;
-        }
+        TiledTiffWriter.Image out = writer.addImage(ifd);
         for (int y = 0; y < nY; y++) {
             for (int x = 0; x < nX; x++) {
                 int index = y * nX + x;
@@ -180,7 +199,7 @@ final class TestFixtures {
                 }
                 BufferedImage tile = tileImage(x, y, im.tileSize(), im.samples());
                 byte[] data = im.compression() == 7 ? jpeg(tile) : rgbSamples(tile);
-                writer.writeIFDStrips(ifd, data, lastImage && index == lastStored, x * im.tileSize(), y * im.tileSize());
+                out.writeTile(x, y, data);
             }
         }
     }

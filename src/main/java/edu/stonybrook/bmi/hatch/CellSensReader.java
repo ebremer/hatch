@@ -13,12 +13,14 @@ import loci.common.RandomAccessInputStream;
 import loci.common.Region;
 import loci.formats.CoreMetadata;
 import loci.formats.FormatException;
+import loci.formats.FormatReader;
 import static loci.formats.FormatHandler.checkSuffix;
 import loci.formats.FormatTools;
 import loci.formats.IFormatReader;
 import loci.formats.MetadataTools;
 import loci.formats.codec.Codec;
 import loci.formats.codec.CodecOptions;
+import loci.formats.codec.JPEGCodec;
 import loci.formats.codec.LosslessJPEGCodec;
 import loci.formats.codec.JPEG2000Codec;
 import loci.formats.in.APNGReader;
@@ -26,14 +28,17 @@ import loci.formats.in.BMPReader;
 import loci.formats.in.DynamicMetadataOptions;
 import loci.formats.in.MetadataOptions;
 import loci.formats.meta.MetadataStore;
+import loci.formats.tiff.IFD;
+import loci.formats.tiff.IFDList;
 import loci.formats.tiff.PhotoInterp;
+import loci.formats.tiff.TiffParser;
 import ome.units.UNITS;
 import ome.xml.model.primitives.Timestamp;
 
 /**
  * CellSensReader is the file format reader for cellSens .vsi files.
  */
-public class CellSensReader extends FormatReader {
+public class CellSensReader extends FormatReader implements RawTileSource {
 
   // -- Constants --
 
@@ -353,12 +358,17 @@ public class CellSensReader extends FormatReader {
   private TiffParser parser;
   private IFDList ifds;
   private ArrayList<Long[]> tileOffsets = new ArrayList<Long[]>();
+  /** Per core index: the stored size of each chunk, parallel to tileOffsets. */
+  private ArrayList<int[]> tileByteCounts = new ArrayList<>();
+  /** Open .ets files, by path; tiles are read from them with positional reads. */
+  private HashMap<String, TileFile> etsFiles = new HashMap<>();
   private ArrayList<Integer> rows = new ArrayList<Integer>();
   private ArrayList<Integer> cols = new ArrayList<Integer>();
   private ArrayList<Integer> compressionType = new ArrayList<Integer>();
   private ArrayList<Integer> tileX = new ArrayList<Integer>();
   private ArrayList<Integer> tileY = new ArrayList<Integer>();
-  private ArrayList<ArrayList<TileCoordinate>> tileMap = new ArrayList<ArrayList<TileCoordinate>>();
+  /** Per core index: tile coordinate -> chunk index in tileOffsets and tileByteCounts. */
+  private ArrayList<HashMap<TileCoordinate, Integer>> tileMap = new ArrayList<>();
   private ArrayList<Integer> nDimensions = new ArrayList<Integer>();
   private boolean inDimensionProperties = false;
   private boolean foundChannelTag = false;
@@ -408,11 +418,6 @@ public class CellSensReader extends FormatReader {
     return FormatTools.MUST_GROUP;
   }
   
-  @Override
-  public IFDList getIFDs() {
-      return ifds;
-  }
-
   /* @see loci.formats.IFormatReader#isSingleFile(String) */
   @Override
   public boolean isSingleFile(String id) throws FormatException, IOException {
@@ -549,14 +554,21 @@ public class CellSensReader extends FormatReader {
   @Override
   public void reopenFile() throws IOException {
     super.reopenFile();
-    //System.out.println("reopenFile --> "+currentId);
+    if (parser != null && parser.getStream() != null) {
+      parser.getStream().close();
+    }
     parser = new TiffParser(currentId);
   }
 
   /* @see loci.formats.IFormatReader#close(boolean) */
   @Override
   public void close(boolean fileOnly) throws IOException {
-    super.close(fileOnly);
+    try {
+      super.close(fileOnly);
+    }
+    finally {
+      closeEtsFiles();
+    }
     if (!fileOnly) {
       if (parser != null && parser.getStream() != null) {
         parser.getStream().close();
@@ -566,6 +578,7 @@ public class CellSensReader extends FormatReader {
       usedFiles = null;
       fileMap.clear();
       tileOffsets.clear();
+      tileByteCounts.clear();
       rows.clear();
       cols.clear();
       compressionType.clear();
@@ -593,6 +606,22 @@ public class CellSensReader extends FormatReader {
   /* @see loci.formats.FormatReader#initFile(String) */
   @Override
   protected void initFile(String id) throws FormatException, IOException {
+    try {
+      initVsi(id);
+    }
+    catch (FormatException | IOException | RuntimeException e) {
+      // setId does not close a reader whose initialization failed; the .vsi would stay open
+      try {
+        close();
+      }
+      catch (IOException c) {
+        e.addSuppressed(c);
+      }
+      throw e;
+    }
+  }
+
+  private void initVsi(String id) throws FormatException, IOException {
     super.initFile(id);
 
     if (!checkSuffix(id, "vsi")) {
@@ -950,8 +979,8 @@ public class CellSensReader extends FormatReader {
   }
   
   @Override
-  public byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col) throws FormatException, IOException {
-    return getRaw(rawbuffer, no, row, col);
+  public byte[] getRawTile(int row, int col) throws FormatException, IOException {
+    return getRaw(0, row, col);
   }
 
   @Override
@@ -1022,65 +1051,95 @@ public class CellSensReader extends FormatReader {
     }
   }
   
-  public byte[] getRaw(byte[] rawbuffer, int no, int row, int col) throws FormatException, IOException {
+  /**
+   * The stored JPEG of tile (row, col) of plane {@code no}, exactly as the chunk table
+   * delimits it, or null if the ETS file does not store that tile.
+   */
+  private byte[] getRaw(int no, int row, int col) throws FormatException, IOException {
     if (getCoreIndex() >= tileMap.size()) {
       throw new FormatException("Series " + getSeries() + " is not stored in an .ets file");
-    }
-    int[] zct = getZCTCoords(no);
-    TileCoordinate t = new TileCoordinate(nDimensions.get(getCoreIndex()));
-    t.coordinate[0] = col;
-    t.coordinate[1] = row;
-    int resIndex = getResolution();
-    int pyramidIndex = getSeries();
-    if (hasFlattenedResolutions()) {
-      int index = 0;
-      pyramidIndex = 0;
-      for (int i=0; i<core.size(); ) {
-        if (index + core.get(i).resolutionCount <= getSeries()) {
-          index += core.get(i).resolutionCount;
-          i += core.get(i).resolutionCount;
-          pyramidIndex++;
-        }
-        else {
-          resIndex = getSeries() - index;
-          break;
-        }
-      }
-    }
-    Pyramid pyramid = pyramidMap.get(getCoreIndex());
-    for (String dim : pyramid.dimensionOrdering.keySet()) {
-        int index = pyramid.dimensionOrdering.get(dim) + 2;
-        switch (dim) {
-            case "Z":
-                t.coordinate[index] = zct[0];
-                break;
-            case "C":
-                t.coordinate[index] = zct[1];
-                break;
-            case "T":
-                t.coordinate[index] = zct[2];
-                break;
-            default:
-                break;
-        }
-    }
-    if (resIndex > 0) {
-      t.coordinate[t.coordinate.length - 1] = resIndex;
-    }
-    ArrayList<TileCoordinate> map = tileMap.get(getCoreIndex());
-    int index = map.indexOf(t);
-    if (index < 0) {
-      return null; // not stored: the ETS file skips tiles outside the scanned area
     }
     if (compressionType.get(getCoreIndex()) != JPEG) {
       throw new FormatException("ETS tiles are " + compressionName(compressionType.get(getCoreIndex())) +
         "; only JPEG tiles can be copied");
     }
-    Long offset = tileOffsets.get(getCoreIndex())[index];
-    try (RandomAccessInputStream ets = new RandomAccessInputStream(fileMap.get(getCoreIndex()))) {
-      ets.seek(offset);
-      return JPEGTools.FindFirstEOI(ets, rawbuffer);
+    Integer index = chunkIndex(no, row, col);
+    if (index == null) {
+      return null; // not stored: the ETS file skips tiles outside the scanned area
     }
+    long offset = tileOffsets.get(getCoreIndex())[index];
+    int size = tileByteCounts.get(getCoreIndex())[index];
+    if (size < 4) {
+      throw new FormatException("ETS chunk for tile [" + row + "," + col + "] is " + size + " bytes");
+    }
+    byte[] chunk = etsFile(fileMap.get(getCoreIndex())).read(offset, size);
+    int length = JPEGTools.streamLength(chunk);
+    if (length < 0) {
+      throw new FormatException("ETS chunk for tile [" + row + "," + col + "] at offset " + offset +
+        " is not a complete JPEG stream");
+    }
+    // chunks may carry padding after the JPEG's EOI
+    return length == chunk.length ? chunk : Arrays.copyOf(chunk, length);
+  }
+
+  private TileFile etsFile(String path) throws IOException {
+    TileFile file = etsFiles.get(path);
+    if (file == null) {
+      file = new TileFile(path);
+      etsFiles.put(path, file);
+    }
+    return file;
+  }
+
+  private void closeEtsFiles() throws IOException {
+    IOException failure = null;
+    for (TileFile file : etsFiles.values()) {
+      try {
+        file.close();
+      }
+      catch (IOException e) {
+        if (failure == null) {
+          failure = e;
+        }
+        else {
+          failure.addSuppressed(e);
+        }
+      }
+    }
+    etsFiles.clear();
+    if (failure != null) {
+      throw failure;
+    }
+  }
+
+  /** Chunk index of tile (row, col) of plane {@code no} of the current core index, or null if it is not stored. */
+  private Integer chunkIndex(int no, int row, int col) {
+    int[] zct = getZCTCoords(no);
+    TileCoordinate t = new TileCoordinate(nDimensions.get(getCoreIndex()));
+    t.coordinate[0] = col;
+    t.coordinate[1] = row;
+    int resIndex = resolutionIndex();
+    Pyramid pyramid = pyramidMap.get(getCoreIndex());
+    for (String dim : pyramid.dimensionOrdering.keySet()) {
+      int index = pyramid.dimensionOrdering.get(dim) + 2;
+      switch (dim) {
+        case "Z":
+          t.coordinate[index] = zct[0];
+          break;
+        case "C":
+          t.coordinate[index] = zct[1];
+          break;
+        case "T":
+          t.coordinate[index] = zct[2];
+          break;
+        default:
+          break;
+      }
+    }
+    if (resIndex > 0) {
+      t.coordinate[t.coordinate.length - 1] = resIndex;
+    }
+    return tileMap.get(getCoreIndex()).get(t);
   }
 
   private byte[] decodeTile(int no, int row, int col) throws FormatException, IOException {
@@ -1088,51 +1147,8 @@ public class CellSensReader extends FormatReader {
       return new byte[getTileSize()];
     }
 
-    int[] zct = getZCTCoords(no);
-    TileCoordinate t = new TileCoordinate(nDimensions.get(getCoreIndex()));
-    t.coordinate[0] = col;
-    t.coordinate[1] = row;
-
-    int resIndex = getResolution();
-    int pyramidIndex = getSeries();
-    if (hasFlattenedResolutions()) {
-      int index = 0;
-      pyramidIndex = 0;
-      for (int i=0; i<core.size(); ) {
-        if (index + core.get(i).resolutionCount <= getSeries()) {
-          index += core.get(i).resolutionCount;
-          i += core.get(i).resolutionCount;
-          pyramidIndex++;
-        }
-        else {
-          resIndex = getSeries() - index;
-          break;
-        }
-      }
-    }
-
-    Pyramid pyramid = pyramidMap.get(getCoreIndex());
-    for (String dim : pyramid.dimensionOrdering.keySet()) {
-      int index = pyramid.dimensionOrdering.get(dim) + 2;
-
-      if (dim.equals("Z")) {
-        t.coordinate[index] = zct[0];
-      }
-      else if (dim.equals("C")) {
-        t.coordinate[index] = zct[1];
-      }
-      else if (dim.equals("T")) {
-        t.coordinate[index] = zct[2];
-      }
-    }
-
-    if (resIndex > 0) {
-      t.coordinate[t.coordinate.length - 1] = resIndex;
-    }
-
-    ArrayList<TileCoordinate> map = tileMap.get(getCoreIndex());
-    Integer index = map.indexOf(t);
-    if (index == null || index < 0) {
+    Integer index = chunkIndex(no, row, col);
+    if (index == null) {
       // fill in the tile with the stored background color
       // usually this is either black or white
       byte[] tile = new byte[getTileSize()];
@@ -1174,7 +1190,7 @@ public class CellSensReader extends FormatReader {
           ets.read(buf);
           break;
         case JPEG:
-          Codec codec = new NeoJPEGCodec();
+          Codec codec = new JPEGCodec();
           buf = codec.decompress(ets, options);
           break;
         case JPEG_2000:
@@ -1278,6 +1294,7 @@ public class CellSensReader extends FormatReader {
     etsFile.seek(usedChunkOffset);
 
     tileOffsets.add(new Long[nUsedChunks]);
+    tileByteCounts.add(new int[nUsedChunks]);
 
     ArrayList<TileCoordinate> tmpTiles = new ArrayList<>();
 
@@ -1289,7 +1306,7 @@ public class CellSensReader extends FormatReader {
         t.coordinate[i] = etsFile.readInt();
       }
       tileOffsets.get(tileOffsets.size() - 1)[chunk] = etsFile.readLong();
-      int nBytes = etsFile.readInt();
+      tileByteCounts.get(tileByteCounts.size() - 1)[chunk] = etsFile.readInt();
       etsFile.skipBytes(4);
 
       tmpTiles.add(t);
@@ -1346,6 +1363,7 @@ public class CellSensReader extends FormatReader {
         tileY.remove(tileY.size() - 1);
         backgroundColor.remove(getCoreIndex());
         tileOffsets.remove(tileOffsets.size() - 1);
+        tileByteCounts.remove(tileByteCounts.size() - 1);
         return false;
       }
     }
@@ -1480,9 +1498,9 @@ public class CellSensReader extends FormatReader {
       cols.add(1);
     }
 
-    ArrayList<TileCoordinate> map = new ArrayList<TileCoordinate>();
+    HashMap<TileCoordinate, Integer> map = new HashMap<>(tmpTiles.size() * 2);
     for (int i=0; i<tmpTiles.size(); i++) {
-      map.add(tmpTiles.get(i));
+      map.putIfAbsent(tmpTiles.get(i), i); // first chunk wins, as with a linear search
     }
     tileMap.add(map);
 
@@ -1543,6 +1561,7 @@ public class CellSensReader extends FormatReader {
         tileMap.add(map);
         nDimensions.add(nDimensions.get(nDimensions.size() - 1));
         tileOffsets.add(tileOffsets.get(tileOffsets.size() - 1));
+        tileByteCounts.add(tileByteCounts.get(tileByteCounts.size() - 1));
         backgroundColor.put(core.size() - 1, color);
       }
 
@@ -2578,10 +2597,6 @@ public class CellSensReader extends FormatReader {
     return 1 - (core.size() - getCoreIndex());
   }
 
-    @Override
-    public byte[] getRawBytes(IFD ifd, int no, int row, int col) {
-        throw new UnsupportedOperationException("getRawBytes(IFD) is not supported by CellSensReader");
-    }
 
   // -- Helper class --
 
@@ -2609,6 +2624,11 @@ public class CellSensReader extends FormatReader {
         }
       }
       return true;
+    }
+
+    @Override
+    public int hashCode() {
+      return Arrays.hashCode(coordinate);
     }
 
     @Override

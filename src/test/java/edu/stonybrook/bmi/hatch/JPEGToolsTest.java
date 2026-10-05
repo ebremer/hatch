@@ -5,17 +5,14 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.util.Arrays;
 import javax.imageio.ImageIO;
-import loci.common.RandomAccessInputStream;
 import loci.formats.FormatException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-/** Tests for {@link JPEGTools#FindFirstEOI}, including the bounds/null hardening. */
+/** Tests for the JPEG stream helpers in {@link JPEGTools}. */
 class JPEGToolsTest {
 
     private static byte[] sampleJpeg() throws IOException {
@@ -31,43 +28,35 @@ class JPEGToolsTest {
         return baos.toByteArray();
     }
 
-    private static RandomAccessInputStream rais(Path dir, String name, byte[] data) throws IOException {
-        Path f = dir.resolve(name);
-        Files.write(f, data);
-        return new RandomAccessInputStream(f.toString());
+    @Test
+    void streamLengthStopsAtTheEndOfTheJpegAndIgnoresTrailingBytes() throws IOException {
+        byte[] jpeg = sampleJpeg();
+        byte[] padded = Arrays.copyOf(jpeg, jpeg.length + 9);
+        Arrays.fill(padded, jpeg.length, padded.length, (byte) 0x42);
+
+        assertEquals(jpeg.length, JPEGTools.streamLength(jpeg));
+        assertEquals(jpeg.length, JPEGTools.streamLength(padded), "trailing padding is not part of the stream");
     }
 
     @Test
-    void extractsJpegUpToFirstEOIAndIgnoresTrailer(@TempDir Path dir) throws IOException {
+    void streamLengthIsNotFooledByAnEoiInsideAMarkerSegment() throws IOException {
+        // an APP1 segment (as for an EXIF thumbnail) that contains FF D9 right after SOI
         byte[] jpeg = sampleJpeg();
-        byte[] withTrailer = new byte[jpeg.length + 8];
-        System.arraycopy(jpeg, 0, withTrailer, 0, jpeg.length);
-        for (int i = jpeg.length; i < withTrailer.length; i++) {
-            withTrailer[i] = 0x42; // junk after the real EOI
-        }
+        byte[] app1 = {(byte) 0xFF, (byte) 0xE1, 0, 8, (byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xD9, 0, 0};
+        byte[] withThumbnail = new byte[jpeg.length + app1.length];
+        System.arraycopy(jpeg, 0, withThumbnail, 0, 2);
+        System.arraycopy(app1, 0, withThumbnail, 2, app1.length);
+        System.arraycopy(jpeg, 2, withThumbnail, 2 + app1.length, jpeg.length - 2);
 
-        byte[] buf = new byte[withTrailer.length + 16];
-        byte[] result;
-        try (RandomAccessInputStream in = rais(dir, "trailer.bin", withTrailer)) {
-            result = JPEGTools.FindFirstEOI(in, buf);
-        }
-
-        assertEquals(jpeg.length, result.length, "stops at first EOI, excludes trailer");
-        assertEquals((byte) 0xFF, result[0]);
-        assertEquals((byte) 0xD8, result[1]);
-        assertEquals((byte) 0xFF, result[result.length - 2]);
-        assertEquals((byte) 0xD9, result[result.length - 1]);
+        assertEquals(withThumbnail.length, JPEGTools.streamLength(withThumbnail));
     }
 
     @Test
-    void throwsWhenBufferTooSmall(@TempDir Path dir) throws IOException {
-        // Regression: previously overran the buffer with ArrayIndexOutOfBoundsException.
+    void streamLengthRejectsTruncatedAndNonJpegData() throws IOException {
         byte[] jpeg = sampleJpeg();
-        byte[] tiny = new byte[jpeg.length / 2];
-        try (RandomAccessInputStream in = rais(dir, "small.bin", jpeg)) {
-            assertThrows(IOException.class, () -> JPEGTools.FindFirstEOI(in, tiny),
-                "buffer overflow must surface as IOException, not AIOOBE");
-        }
+        assertEquals(-1, JPEGTools.streamLength(Arrays.copyOf(jpeg, jpeg.length - 2)), "no EOI");
+        assertEquals(-1, JPEGTools.streamLength(Arrays.copyOf(jpeg, jpeg.length / 2)), "cut mid-scan");
+        assertEquals(-1, JPEGTools.streamLength(new byte[] {0x11, 0x11, 0x11, 0x11, 0x11}), "no SOI");
     }
 
     @Test
@@ -119,20 +108,6 @@ class JPEGToolsTest {
             assertEquals(0xF2, (rgb >> 16) & 0xff, 2, "red of " + like);
             assertEquals(0xE6, (rgb >> 8) & 0xff, 2, "green of " + like);
             assertEquals(0xD8, rgb & 0xff, 2, "blue of " + like);
-        }
-    }
-
-    @Test
-    void throwsWhenNoEOIMarker(@TempDir Path dir) throws IOException {
-        // Regression: previously returned null, which became corrupt tile data downstream.
-        byte[] noMarker = new byte[64];
-        for (int i = 0; i < noMarker.length; i++) {
-            noMarker[i] = 0x11;
-        }
-        byte[] buf = new byte[256];
-        try (RandomAccessInputStream in = rais(dir, "nomarker.bin", noMarker)) {
-            assertThrows(IOException.class, () -> JPEGTools.FindFirstEOI(in, buf),
-                "missing EOI must surface as IOException, not null");
         }
     }
 }

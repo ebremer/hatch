@@ -5,7 +5,8 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.nio.file.Path;
 import javax.imageio.ImageIO;
-import loci.common.RandomAccessInputStream;
+import loci.formats.tiff.IFD;
+import loci.formats.tiff.IFDList;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -18,9 +19,10 @@ import org.junit.jupiter.api.io.TempDir;
  * End-to-end conversion tests: synthesize a small tiled-JPEG "slide", run the full
  * {@link X2TIF} conversion, and assert the structure and bytes of the output pyramid.
  *
- * <p>The output is read back with the project's own {@link TiffParser} for structure
- * (level count, per-level dimensions, compression) and for raw tile bytes; an extracted
- * base tile is additionally decoded with {@link ImageIO} to confirm it is valid imagery.
+ * <p>The output is read back with Bio-Formats' {@link loci.formats.tiff.TiffParser} for
+ * structure (level count, per-level dimensions, compression) and with {@link JpegTiffTiles}
+ * for raw tile bytes; an extracted base tile is additionally decoded with {@link ImageIO}
+ * to confirm it is valid imagery.
  */
 class HatchConversionTest {
 
@@ -69,10 +71,8 @@ class HatchConversionTest {
             "IFD chain stays inside the file, ends in 0, and has one IFD per level");
 
         // ---- structure of the output pyramid, via the project's own parser ----
-        byte[] outBaseTile;
-        try (RandomAccessInputStream in = new RandomAccessInputStream(dest.toString())) {
-            TiffParser tp = new TiffParser(in);
-            IFDList ifds = tp.getMainIFDs();
+        {
+            IFDList ifds = TestFixtures.ifds(dest);
 
             assertEquals(expectedDepth, ifds.size(),
                 "output pyramid level count must equal the computed depth");
@@ -98,8 +98,16 @@ class HatchConversionTest {
                     && ifds.get(last).getImageLength() <= 1024,
                 "smallest level fits the <=1024 validation invariant");
 
-            outBaseTile = tp.getRawTile(ifds.get(0), 0, 0);
+            for (int s = 1; s < ifds.size(); s++) {
+                byte[] reduced = TestFixtures.rawTile(dest, s, 0, 0);
+                assertEquals(new JPEGTools.JpegInfo(3, 2, 2, false), JPEGTools.inspect(reduced),
+                    "level " + s + " tiles are JFIF YCbCr 4:2:0");
+                assertArrayEquals(new int[] {2, 2}, ifds.get(s).getIFDIntArray(IFD.Y_CB_CR_SUB_SAMPLING),
+                    "level " + s + " declares the subsampling of its tiles");
+                assertEquals(6, ifds.get(s).getIFDIntValue(IFD.PHOTOMETRIC_INTERPRETATION));
+            }
         }
+        byte[] outBaseTile = TestFixtures.rawTile(dest, 0, 0, 0);
 
         // ---- byte-level: the base tile is a valid JPEG ----
         assertNotNull(outBaseTile, "base tile read back");
@@ -109,11 +117,7 @@ class HatchConversionTest {
         assertEquals((byte) 0xD9, outBaseTile[outBaseTile.length - 1]);
 
         // ---- lossless passthrough: base-level tile is copied verbatim (no re-encode) ----
-        byte[] srcBaseTile;
-        try (RandomAccessInputStream sin = new RandomAccessInputStream(src.toString())) {
-            TiffParser stp = new TiffParser(sin);
-            srcBaseTile = stp.getRawTile(stp.getMainIFDs().get(0), 0, 0);
-        }
+        byte[] srcBaseTile = TestFixtures.rawTile(src, 0, 0, 0);
         assertArrayEquals(srcBaseTile, outBaseTile,
             "base-level JPEG tile must be transferred verbatim");
 

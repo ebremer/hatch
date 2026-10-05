@@ -69,6 +69,14 @@ class CliTest {
     }
 
     @Test
+    void logOptionAppendsErrorsToTheGivenFile(@TempDir Path dir) throws Exception {
+        Path log = dir.resolve("errors.log");
+        assertEquals(1, Hatch.run(new String[] {"-src", dir.resolve("nope.svs").toString(),
+            "-dest", dir.resolve("out").toString(), "-log", log.toString()}));
+        assertTrue(Files.readString(log).contains("nope.svs"), "the error is in the log file");
+    }
+
+    @Test
     void successfulConversionExitsZero(@TempDir Path dir) throws Exception {
         Path src = slide(dir, "a.tif");
         Path dest = dir.resolve("a-out.tif");

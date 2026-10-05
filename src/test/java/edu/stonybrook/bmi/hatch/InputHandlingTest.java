@@ -10,8 +10,9 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.imageio.ImageIO;
-import loci.common.RandomAccessInputStream;
 import loci.formats.FormatException;
+import loci.formats.tiff.IFD;
+import loci.formats.tiff.IFDList;
 import loci.formats.tiff.TiffRational;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -46,18 +47,12 @@ class InputHandlingTest {
         }
     }
 
-    /** Parsed IFDs of a TIFF; tile reads must happen while the parser is open, so use {@link #tile}. */
     private static IFDList ifds(Path tiff) throws Exception {
-        try (RandomAccessInputStream in = new RandomAccessInputStream(tiff.toString())) {
-            return new TiffParser(in).getMainIFDs();
-        }
+        return TestFixtures.ifds(tiff.toFile());
     }
 
     private static byte[] tile(Path tiff, int image, int row, int col) throws Exception {
-        try (RandomAccessInputStream in = new RandomAccessInputStream(tiff.toString())) {
-            TiffParser tp = new TiffParser(in);
-            return tp.getRawTile(tp.getMainIFDs().get(image), row, col);
-        }
+        return TestFixtures.rawTile(tiff.toFile(), image, row, col);
     }
 
     private static String xmp(IFD ifd) {

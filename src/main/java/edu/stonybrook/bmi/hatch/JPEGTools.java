@@ -3,21 +3,22 @@ package edu.stonybrook.bmi.hatch;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
 import javax.imageio.ImageTypeSpecifier;
 import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
 import javax.imageio.metadata.IIOMetadata;
 import javax.imageio.metadata.IIOMetadataNode;
+import javax.imageio.stream.ImageInputStream;
+import javax.imageio.stream.MemoryCacheImageInputStream;
 import javax.imageio.stream.MemoryCacheImageOutputStream;
-import loci.common.RandomAccessInputStream;
 import loci.formats.FormatException;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -27,8 +28,6 @@ import org.w3c.dom.NodeList;
  * @author erich
  */
 public class JPEGTools {
-    static byte FF = (byte) 0xff;
-    static byte D9 = (byte) 0xd9;
     private static final String JPEG_METADATA = "javax_imageio_jpeg_image_1.0";
 
     /**
@@ -41,27 +40,62 @@ public class JPEGTools {
      */
     public record JpegInfo(int components, int hSubsampling, int vSubsampling, boolean rgb) {}
 
-    public static byte[] FindFirstEOI(RandomAccessInputStream ets, byte[] r) throws IOException {
-        long begin = ets.getFilePointer();
-        long length = ets.length();
-        int c = 0;
-        byte prev = 0;
-        while (ets.getFilePointer() < length) {
-            if (c >= r.length) {
-                throw new IOException("JPEG tile starting at offset " + begin
-                        + " has no EOI (FFD9) marker within the " + r.length + "-byte buffer");
-            }
-            byte b = ets.readByte();
-            r[c] = b;
-            if (c > 0 && Byte.compare(prev, FF) == 0 && Byte.compare(b, D9) == 0) {
-                ets.seek(begin);
-                return Arrays.copyOf(r, c + 1);
-            }
-            prev = b;
-            c++;
+    /**
+     * Length of the JPEG stream at the start of {@code b}: the index just past the EOI marker
+     * that ends it. Marker segments are skipped by their declared length and entropy-coded
+     * data up to the next real marker, so an EOI inside a segment (an embedded EXIF
+     * thumbnail, say) does not end the stream early, and bytes after the EOI are ignored.
+     *
+     * @return the length, or -1 if {@code b} does not start with SOI or ends before EOI
+     */
+    public static int streamLength(byte[] b) {
+        int n = b.length;
+        if (n < 4 || (b[0] & 0xff) != 0xFF || (b[1] & 0xff) != 0xD8) {
+            return -1;
         }
-        throw new IOException("Reached end of stream at offset " + begin
-                + " before finding JPEG EOI (FFD9) marker");
+        int pos = 2;
+        while (pos + 1 < n) {
+            if ((b[pos] & 0xff) != 0xFF) {
+                return -1; // a marker was expected here
+            }
+            int marker = b[pos + 1] & 0xff;
+            if (marker == 0xFF) {
+                pos++; // fill byte
+                continue;
+            }
+            if (marker == 0xD9) {
+                return pos + 2;
+            }
+            if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
+                pos += 2; // standalone marker, no length field
+                continue;
+            }
+            if (pos + 3 >= n) {
+                return -1;
+            }
+            int length = ((b[pos + 2] & 0xff) << 8) | (b[pos + 3] & 0xff);
+            if (length < 2) {
+                return -1;
+            }
+            pos += 2 + length;
+            if (marker == 0xDA) {
+                // entropy-coded data runs to the next marker that is not a stuffed 0xFF00 or a restart
+                while (pos + 1 < n) {
+                    if ((b[pos] & 0xff) == 0xFF) {
+                        int next = b[pos + 1] & 0xff;
+                        if (next == 0x00 || (next >= 0xD0 && next <= 0xD7)) {
+                            pos += 2;
+                            continue;
+                        }
+                        if (next != 0xFF) {
+                            break;
+                        }
+                    }
+                    pos++;
+                }
+            }
+        }
+        return -1;
     }
 
     /**
@@ -195,23 +229,34 @@ public class JPEGTools {
         }
     }
 
-    public static byte[] Dump2ByteArray(String src, BufferedImage bi, float compression) {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ImageWriter jpgWriter = (ImageWriter) ImageIO.getImageWritersByFormatName("jpg").next();
+    /** Decodes a JPEG held in memory. */
+    public static BufferedImage decode(byte[] jpeg) throws IOException {
+        ImageReader reader = ImageIO.getImageReadersByFormatName("jpeg").next();
+        // an explicit in-memory stream: ImageIO.read(InputStream) may cache through a temp file
+        try (ImageInputStream in = new MemoryCacheImageInputStream(new ByteArrayInputStream(jpeg))) {
+            reader.setInput(in, true, true);
+            return reader.read(0);
+        } finally {
+            reader.dispose();
+        }
+    }
+
+    /** Encodes an image as a baseline JPEG; ImageIO writes JFIF YCbCr 4:2:0 for 3-band images. */
+    public static byte[] encode(BufferedImage image, float quality) throws IOException {
+        ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
         try {
-            ImageWriteParam param = jpgWriter.getDefaultWriteParam();
+            ImageWriteParam param = writer.getDefaultWriteParam();
             param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
             param.setProgressiveMode(ImageWriteParam.MODE_DISABLED);
-            param.setCompressionQuality(compression);
-            MemoryCacheImageOutputStream outputStream = new MemoryCacheImageOutputStream(baos);
-            outputStream.setByteOrder(ByteOrder.LITTLE_ENDIAN);
-            jpgWriter.setOutput(outputStream);
-            jpgWriter.write(null, new IIOImage(bi, null, null), param);
-        } catch (IOException ex) {
-            throw new UncheckedIOException("JPEG encoding failed for " + src, ex);
+            param.setCompressionQuality(quality);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (MemoryCacheImageOutputStream out = new MemoryCacheImageOutputStream(baos)) {
+                writer.setOutput(out);
+                writer.write(null, new IIOImage(image, null, null), param);
+            }
+            return baos.toByteArray();
         } finally {
-            jpgWriter.dispose();
+            writer.dispose();
         }
-        return baos.toByteArray();
     }
 }

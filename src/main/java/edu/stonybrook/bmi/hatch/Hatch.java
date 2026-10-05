@@ -4,6 +4,7 @@ import com.beust.jcommander.JCommander;
 import com.beust.jcommander.ParameterException;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +23,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
@@ -34,16 +36,7 @@ import java.util.stream.Stream;
 public class Hatch {
     public static String software = "hatch 4.3.0 by Wing-n-Beak";
     private static final String[] ext = new String[] {".vsi", ".svs", ".tif"};
-    private static final Logger LOGGER;
-
-    static {
-         try {
-             LogManager.getLogManager().readConfiguration(Hatch.class.getResourceAsStream("/logging.properties"));
-         } catch (IOException | SecurityException | ExceptionInInitializerError ex) {
-             Logger.getLogger(Hatch.class.getName()).log(Level.SEVERE, "Failed to read logging.properties file", ex);
-         }
-         LOGGER = Logger.getLogger(Hatch.class.getName());
-     }
+    private static final Logger LOGGER = Logger.getLogger(Hatch.class.getName());
 
     public Hatch() {}
 
@@ -190,8 +183,20 @@ public class Hatch {
         System.exit(run(args));
     }
 
+    /** Reads the logging configuration; done once per run, since it resets every logger and handler. */
+    private static void configureLogging() {
+        try (InputStream config = Hatch.class.getResourceAsStream("/logging.properties")) {
+            if (config != null) {
+                LogManager.getLogManager().readConfiguration(config);
+            }
+        } catch (IOException | SecurityException ex) {
+            LOGGER.log(Level.WARNING, "Failed to read logging.properties", ex);
+        }
+    }
+
     /** Runs hatch with the given arguments; returns the process exit code (0 = all files converted). */
     static int run(String[] args) {
+        configureLogging();
         LOGGER.setLevel(Level.SEVERE);
         loci.common.DebugTools.setRootLevel("WARN");
         if (args.length==0) {
@@ -212,10 +217,32 @@ public class Hatch {
             LOGGER.severe(ex.getMessage());
             return 1;
         }
-        LOGGER.log(Level.INFO,params.toString());
         if (params.verbose) {
             LOGGER.setLevel(Level.INFO);
         }
+        FileHandler errorLog = null;
+        if (params.log != null) {
+            try {
+                errorLog = new FileHandler(params.log.getPath(), true);
+                errorLog.setLevel(Level.SEVERE);
+                errorLog.setFormatter(new SingleLineFormatter());
+                Logger.getLogger("").addHandler(errorLog);
+            } catch (IOException ex) {
+                LOGGER.log(Level.SEVERE, "Cannot write the log file {0}: {1}", new Object[]{params.log, ex.toString()});
+                return 1;
+            }
+        }
+        try {
+            return convertAll(params, jc);
+        } finally {
+            if (errorLog != null) {
+                Logger.getLogger("").removeHandler(errorLog);
+                errorLog.close();
+            }
+        }
+    }
+
+    private static int convertAll(HatchParameters params, JCommander jc) {
         if (!params.src.exists()) {
             LOGGER.log(Level.SEVERE, "{0} does not exist!", params.src.toString());
             return 1;
