@@ -1346,7 +1346,7 @@ public class TiffParser implements Closeable {
     // Only adjust the offset if we know that the file is too large for 32-bit
     // offsets to be accurate; otherwise, we're making the incorrect assumption
     // that IFDs are stored sequentially.
-    if (offset < previous && offset != 0 && in.length() > Integer.MAX_VALUE) {
+    if (offset < previous && offset != 0 && in.length() >= 0x100000000L) {
       offset += 0x100000000L;
     }
     return offset;
@@ -1379,30 +1379,27 @@ public class TiffParser implements Closeable {
     return new TiffIFDEntry(entryTag, entryType, valueCount, offset);
   }
   
-  public byte[] getRawTile(IFD ifd, byte[] buf, int row, int col) throws FormatException, IOException {
-    PhotoInterp photoInterp = ifd.getPhotometricInterpretation();
-    boolean littleEndian = ifd.isLittleEndian();
-    in.order(littleEndian);
+  /**
+   * Returns the stored JPEG stream of one tile, or null if the file does not store that tile.
+   * When the IFD keeps shared JPEGTables, they are spliced in (with an Adobe marker recording
+   * the colour transform) so the result is a self-contained JPEG.
+   */
+  public byte[] getRawTile(IFD ifd, int row, int col) throws FormatException, IOException {
+    in.order(ifd.isLittleEndian());
     byte[] jpegTable = (byte[]) ifd.getIFDValue(IFD.JPEG_TABLES);
-    codecOptions.interleaved = true;
-    codecOptions.littleEndian = ifd.isLittleEndian();
-    long tileWidth = ifd.getTileWidth();
-    long tileLength = ifd.getTileLength();
-    int samplesPerPixel = ifd.getSamplesPerPixel();
-    int planarConfig = ifd.getPlanarConfiguration();
-    //loci.formats.tiff.TiffCompression compression = ifd.getCompression();
     long numTileCols = ifd.getTilesPerRow();
+    long numTileRows = ifd.getTilesPerColumn();
+    if (row < 0 || col < 0 || row >= numTileRows || col >= numTileCols) {
+      throw new FormatException("Tile [" + row + "," + col + "] is outside the " +
+        numTileRows + "x" + numTileCols + " tile grid");
+    }
+    long tileWidth = ifd.getTileWidth();
     int pixel = ifd.getBytesPerSample()[0];
-    int effectiveChannels = planarConfig == 2 ? 1 : samplesPerPixel;
     if (ifd.get(IFD.STRIP_BYTE_COUNTS) instanceof OnDemandLongArray counts) {
-      if (counts != null) {
-        counts.setStream(in);
-      }
+      counts.setStream(in);
     }
     if (ifd.get(IFD.TILE_BYTE_COUNTS) instanceof OnDemandLongArray counts) {
-      if (counts != null) {
-        counts.setStream(in);
-      }
+      counts.setStream(in);
     }
     long[] stripByteCounts = ifd.getStripByteCounts();
     long[] rowsPerStrip = ifd.getRowsPerStrip();
@@ -1426,38 +1423,30 @@ public class TiffParser implements Closeable {
       long[] stripOffsets = ifd.getStripOffsets();
       stripOffset = stripOffsets[offsetIndex];
     }
-    int size = (int) (tileWidth * tileLength * pixel * effectiveChannels);
-    if (buf == null) buf = new byte[size];
     if (stripByteCounts[countIndex] == 0 || stripOffset >= in.length()) {
-      // make sure that the buffer is cleared before returning
-      // the caller may be reusing the same buffer for multiple calls to getTile
-      Arrays.fill(buf, (byte) 0);
-      return buf;
+      return null; // sparse file: this tile was never written
     }
     int tileSize = (int) stripByteCounts[countIndex];
-    if (jpegTable != null) {
-      tileSize += jpegTable.length - 4 + APP14.length;
-    }
-    byte[] tile = new byte[tileSize];
-    LOGGER.debug("Reading tile Length {} Offset {}", tile.length, stripOffset);
-    if (jpegTable != null) {
-        System.arraycopy(jpegTable, 0, tile, 0, jpegTable.length - 2);
-        switch (photoInterp) {
-            case Y_CB_CR:
-                System.arraycopy(APP14Y_CB_CR, 0, tile, jpegTable.length - 2, APP14.length);
-                break;
-            case RGB:
-                System.arraycopy(APP14, 0, tile, jpegTable.length - 2, APP14.length);
-                break;
-            default:
-                throw new Error("Can't handle PhotoInterp "+photoInterp);
-        }
-      in.seek(stripOffset + 2);
-      in.readFully(tile, jpegTable.length - 2 + APP14.length, tile.length - (jpegTable.length - 2 + APP14.length));
-    } else {
+    LOGGER.debug("Reading tile Length {} Offset {}", tileSize, stripOffset);
+    if (jpegTable == null) {
+      byte[] tile = new byte[tileSize];
       in.seek(stripOffset);
       in.readFully(tile);
+      return tile;
     }
+    PhotoInterp photoInterp = ifd.getPhotometricInterpretation();
+    byte[] app14 = switch (photoInterp) {
+      case Y_CB_CR -> APP14Y_CB_CR;
+      case RGB -> APP14;
+      default -> throw new FormatException("Cannot splice JPEG tables into a tile with photometric " + photoInterp);
+    };
+    // the tables without their EOI, the Adobe marker, then the tile without its SOI
+    int head = jpegTable.length - 2 + app14.length;
+    byte[] tile = new byte[head + tileSize - 2];
+    System.arraycopy(jpegTable, 0, tile, 0, jpegTable.length - 2);
+    System.arraycopy(app14, 0, tile, jpegTable.length - 2, app14.length);
+    in.seek(stripOffset + 2);
+    in.readFully(tile, head, tileSize - 2);
     return tile;
   }
 }

@@ -1830,7 +1830,19 @@ public abstract class FormatReader extends FormatHandler
     id.indexOf("\n") > 0;
   }
   
-  public abstract byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col);
-  public abstract byte[] getRawBytes(IFD ifd, int no, int row, int col);
+  /**
+   * Returns the stored JPEG stream of one tile of plane {@code no} of the current series,
+   * or null if the source does not store that tile.
+   */
+  public abstract byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col) throws FormatException, IOException;
+  public abstract byte[] getRawBytes(IFD ifd, int no, int row, int col) throws FormatException, IOException;
   public abstract IFDList getIFDs();
+
+  /**
+   * Describes the tile grid {@link #getRawBytes(byte[], int, int, int)} serves for the current
+   * series, after checking those tiles can be copied verbatim.
+   *
+   * @throws FormatException if the tiles are not baseline-copyable JPEG tiles
+   */
+  public abstract RawTileLayout getRawTileLayout() throws FormatException;
 }

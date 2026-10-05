@@ -146,7 +146,7 @@ public class Pyramid {
         AffineTransform at = new AffineTransform();
         at.scale(DownScale,DownScale);
         AffineTransformOp scaleOp =  new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
-        BufferedImage target = new BufferedImage((int)(DownScale*bi.getWidth()),(int)(DownScale*bi.getHeight()),bi.getType());
+        BufferedImage target = new BufferedImage((int)(DownScale*bi.getWidth()),(int)(DownScale*bi.getHeight()),BufferedImage.TYPE_3BYTE_BGR);
         scaleOp.filter(bi, target);
         put(target,x,y);
     }
@@ -231,7 +231,7 @@ class SmushProcessor implements Runnable {
             AffineTransform at = new AffineTransform();
             at.scale(Pyramid.DownScale,Pyramid.DownScale);
             AffineTransformOp scaleOp =  new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
-            BufferedImage target = new BufferedImage((int)(Pyramid.DownScale*bi.getWidth()),(int)(Pyramid.DownScale*bi.getHeight()),bi.getType());
+            BufferedImage target = new BufferedImage((int)(Pyramid.DownScale*bi.getWidth()),(int)(Pyramid.DownScale*bi.getHeight()),BufferedImage.TYPE_3BYTE_BGR);
             scaleOp.filter(bi, target);
             pyramid.put(target,a,b);   
         } catch (IOException ex) {
@@ -254,7 +254,8 @@ class MergeProcessor implements Runnable {
     }
     
     private BufferedImage Merge(BufferedImage nw, BufferedImage ne, BufferedImage sw, BufferedImage se) {
-        BufferedImage bi = new BufferedImage(2*pyramid.gettileSizeX(),2*pyramid.gettileSizeY(),nw.getType());
+        // an explicit type: decoded tiles can be TYPE_CUSTOM (e.g. JPEGs with an ICC profile), which cannot be allocated
+        BufferedImage bi = new BufferedImage(2*pyramid.gettileSizeX(),2*pyramid.gettileSizeY(),BufferedImage.TYPE_3BYTE_BGR);
         Graphics g = bi.getGraphics();
         g.setColor(Color.BLACK);
         g.fillRect(0, 0, bi.getWidth(), bi.getHeight());
@@ -291,7 +292,7 @@ class MergeProcessor implements Runnable {
             int ny = b/2;
             neotiles[nx][ny] = new JPEGBuffer(pyramid.getSource(), Merge(nw,ne,sw,se),pyramid.getParameters().quality);
         } else {
-            throw new Error("NW TILE NULL!!!");
+            throw new IllegalStateException("Pyramid tile " + a + "," + b + " could not be decoded");
         }
     }
 }

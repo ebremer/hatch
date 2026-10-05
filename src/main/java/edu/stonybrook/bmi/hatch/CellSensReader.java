@@ -1,17 +1,10 @@
 package edu.stonybrook.bmi.hatch;
 
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Hashtable;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import javax.imageio.ImageIO;
 import loci.common.ByteArrayHandle;
 import loci.common.DataTools;
 import loci.common.DateTools;
@@ -28,7 +21,6 @@ import loci.formats.codec.Codec;
 import loci.formats.codec.CodecOptions;
 import loci.formats.codec.LosslessJPEGCodec;
 import loci.formats.codec.JPEG2000Codec;
-import loci.formats.gui.AWTImageTools;
 import loci.formats.in.APNGReader;
 import loci.formats.in.BMPReader;
 import loci.formats.in.DynamicMetadataOptions;
@@ -378,6 +370,9 @@ public class CellSensReader extends FormatReader {
   private int previousTag = 0;
 
   private ArrayList<Pyramid> pyramids = new ArrayList<Pyramid>();
+  /** The pyramid (metadata block) each ETS-backed core index was matched to. */
+  private HashMap<Integer, Pyramid> pyramidMap = new HashMap<>();
+  private String missingEtsMessage;
 
   private transient boolean expectETS = false;
   private transient int channelCount = 0;
@@ -586,6 +581,8 @@ public class CellSensReader extends FormatReader {
       previousTag = 0;
       expectETS = false;
       pyramids.clear();
+      pyramidMap.clear();
+      missingEtsMessage = null;
       channelCount = 0;
       zCount = 0;
     }
@@ -636,7 +633,7 @@ public class CellSensReader extends FormatReader {
         if (pixelsFiles != null) {
           Arrays.sort(pixelsFiles);
           for (String pixelsFile : pixelsFiles) {
-            if (checkSuffix(pixelsFile, "ets")) {
+            if (checkSuffix(pixelsFile, "ets") && pixelsFile.startsWith("frame_")) {
               files.add(new Location(stackDir, pixelsFile).getAbsolutePath());
             }
           }
@@ -647,6 +644,7 @@ public class CellSensReader extends FormatReader {
     usedFiles = files.toArray(new String[files.size()]);
     if (expectETS && files.size() == 1) {
       String message = "Missing expected .ets files in " + pixelsDir.getAbsolutePath();
+      missingEtsMessage = message;
       if (failOnMissingETS()) {
         throw new FormatException(message);
       }
@@ -692,6 +690,8 @@ public class CellSensReader extends FormatReader {
 
     IFDList exifs = parser.getExifIFDs();
 
+    // more ETS files than pyramids in the .vsi: match each file to a pyramid by size, ignore orphans
+    boolean hasOrphanEtsFiles = pyramids.size() < (files.size() - 1);
     int index = 0;
     for (int s=0; s<seriesCount; s++) {
       CoreMetadata ms = new CoreMetadata();
@@ -700,8 +700,18 @@ public class CellSensReader extends FormatReader {
       if (s < files.size() - 1) {
         setCoreIndex(index);
         String ff = files.get(s);
+        boolean validFrameFile;
         try (RandomAccessInputStream stream = new RandomAccessInputStream(ff)) {
-            parseETSFile(stream, ff, s);
+            validFrameFile = parseETSFile(stream, ff, s, hasOrphanEtsFiles);
+        }
+        if (!validFrameFile) {
+          LOGGER.warn("Ignoring {}: no image in the .vsi matches its size", ff);
+          core.remove(core.size() - 1);
+          files.remove(s);
+          usedFiles = files.toArray(new String[files.size()]);
+          s--;
+          seriesCount--;
+          continue;
         }
 
         ms.littleEndian = compressionType.get(index) == RAW;
@@ -725,10 +735,6 @@ public class CellSensReader extends FormatReader {
           }
         }
         index += ms.resolutionCount;
-
-        if (s < pyramids.size()) {
-          ms.seriesMetadata = pyramids.get(s).originalMetadata;
-        }
 
         setCoreIndex(0);
         ms.dimensionOrder = "XYCZT";
@@ -813,7 +819,11 @@ public class CellSensReader extends FormatReader {
     for (int i=0; i<core.size();) {
       setCoreIndex(i);
       Pyramid pyramid = null;
-      if (!(ignoredPyramids > 0 &&
+      if (pyramidMap.containsKey(i)) {
+        pyramid = pyramidMap.get(i);
+        nextPyramid = pyramids.indexOf(pyramid) + 1;
+      }
+      else if (!(ignoredPyramids > 0 &&
         i < (core.size() - (pyramids.size() - ignoredPyramids))) &&
         nextPyramid < pyramids.size())
       {
@@ -940,17 +950,81 @@ public class CellSensReader extends FormatReader {
   }
   
   @Override
-  public byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col) {
-      try {
-          return getRaw(rawbuffer, no, row, col);
-      } catch (FormatException | IOException ex) {
-          throw new RuntimeException("Failed to read raw tile [" + row + "," + col + "]", ex);
+  public byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col) throws FormatException, IOException {
+    return getRaw(rawbuffer, no, row, col);
+  }
+
+  @Override
+  public RawTileLayout getRawTileLayout() throws FormatException {
+    int index = getCoreIndex();
+    if (index >= tileMap.size()) {
+      throw new FormatException(missingEtsMessage != null ? missingEtsMessage :
+        "Series " + getSeries() + " is stored in the .vsi itself, not in an .ets file");
+    }
+    if (compressionType.get(index) != JPEG) {
+      throw new FormatException("ETS tiles are " + compressionName(compressionType.get(index)) +
+        "; only JPEG tiles can be copied");
+    }
+    int tw = tileX.get(index);
+    int th = tileY.get(index);
+    int width = getSizeX();
+    int height = getSizeY();
+    Pyramid pyramid = pyramidMap.get(index);
+    if (pyramid != null && pyramid.tileOriginX != null && pyramid.tileOriginY != null &&
+      (pyramid.tileOriginX != 0 || pyramid.tileOriginY != 0))
+    {
+      // The image is the window of the tile grid that starts at -origin. Tiles cannot be cut
+      // without re-encoding, so the output keeps the grid's own origin instead.
+      int scale = 1 << resolutionIndex();
+      int ox = pyramid.tileOriginX / scale;
+      int oy = pyramid.tileOriginY / scale;
+      width = Math.max(1, width - ox);
+      height = Math.max(1, height - oy);
+      LOGGER.warn("ETS tile origin is ({}, {}); the output is offset by ({}, {}) pixels from the image Bio-Formats reports",
+        ox, oy, -ox, -oy);
+    }
+    int background = RawTileLayout.WHITE;
+    byte[] color = backgroundColor.get(index);
+    if (color != null && color.length >= 3 && getPixelType() == FormatTools.UINT8) {
+      background = ((color[0] & 0xff) << 16) | ((color[1] & 0xff) << 8) | (color[2] & 0xff);
+    }
+    return new RawTileLayout(width, height, tw, th,
+      (width + tw - 1) / tw, (height + th - 1) / th, background);
+  }
+
+  /** Resolution level of the current core index within its series. */
+  private int resolutionIndex() {
+    if (!hasFlattenedResolutions()) {
+      return getResolution();
+    }
+    int index = 0;
+    for (int i=0; i<core.size(); ) {
+      if (index + core.get(i).resolutionCount <= getSeries()) {
+        index += core.get(i).resolutionCount;
+        i += core.get(i).resolutionCount;
       }
+      else {
+        return getSeries() - index;
+      }
+    }
+    return 0;
+  }
+
+  private static String compressionName(int compression) {
+    switch (compression) {
+      case RAW: return "uncompressed";
+      case JPEG: return "JPEG";
+      case JPEG_2000: return "JPEG-2000";
+      case JPEG_LOSSLESS: return "lossless JPEG";
+      case PNG: return "PNG";
+      case BMP: return "BMP";
+      default: return "compression type " + compression;
+    }
   }
   
   public byte[] getRaw(byte[] rawbuffer, int no, int row, int col) throws FormatException, IOException {
-    if (tileMap.get(getCoreIndex()) == null) {
-      return new byte[getTileSize()];
+    if (getCoreIndex() >= tileMap.size()) {
+      throw new FormatException("Series " + getSeries() + " is not stored in an .ets file");
     }
     int[] zct = getZCTCoords(no);
     TileCoordinate t = new TileCoordinate(nDimensions.get(getCoreIndex()));
@@ -973,7 +1047,7 @@ public class CellSensReader extends FormatReader {
         }
       }
     }
-    Pyramid pyramid = pyramids.get(pyramidIndex);
+    Pyramid pyramid = pyramidMap.get(getCoreIndex());
     for (String dim : pyramid.dimensionOrdering.keySet()) {
         int index = pyramid.dimensionOrdering.get(dim) + 2;
         switch (dim) {
@@ -994,60 +1068,19 @@ public class CellSensReader extends FormatReader {
       t.coordinate[t.coordinate.length - 1] = resIndex;
     }
     ArrayList<TileCoordinate> map = tileMap.get(getCoreIndex());
-    Integer index = map.indexOf(t);
+    int index = map.indexOf(t);
     if (index < 0) {
-      // fill in the tile with the stored background color
-      // usually this is either black or white
-      byte[] tile = new byte[getTileSize()];
-      byte[] color = backgroundColor.get(getCoreIndex());
-      if (color != null) {
-        for (int q=0; q<getTileSize(); q+=color.length) {
-          for (int i=0; i<color.length; i++) {
-            tile[q + i] = color[i];
-          }
-        }
-      }
-      int tw = tileX.get(getCoreIndex());
-      int th = tileY.get(getCoreIndex());
-      int channels = getRGBChannelCount();
-      int bpp = FormatTools.getBytesPerPixel(getPixelType());
-      BufferedImage bi = AWTImageTools.makeImage(tile, tw, th, channels, true, bpp, false, isLittleEndian(), false);
-      Graphics2D graphics = bi.createGraphics();
-      graphics.setColor(Color.BLACK);
-      graphics.fillRect(0, 0, tw, th);
-      ByteArrayOutputStream baos = new ByteArrayOutputStream();
-      ImageIO.write(bi, "jpg", baos );
-      tile = baos.toByteArray();
-      return tile;
+      return null; // not stored: the ETS file skips tiles outside the scanned area
+    }
+    if (compressionType.get(getCoreIndex()) != JPEG) {
+      throw new FormatException("ETS tiles are " + compressionName(compressionType.get(getCoreIndex())) +
+        "; only JPEG tiles can be copied");
     }
     Long offset = tileOffsets.get(getCoreIndex())[index];
-    byte[] buf = null;
-    IFormatReader reader = null;
     try (RandomAccessInputStream ets = new RandomAccessInputStream(fileMap.get(getCoreIndex()))) {
-        ets.seek(offset);
-        CodecOptions options = new CodecOptions();
-        options.interleaved = isInterleaved();
-        options.littleEndian = isLittleEndian();
-        int tileSize = getTileSize();
-        if (tileSize == 0) {
-            tileSize = tileX.get(getCoreIndex()) * tileY.get(getCoreIndex()) * 10;
-        }
-        options.maxBytes = tileSize;
-        // long end = index < tileOffsets.get(getCoreIndex()).length - 1 ? tileOffsets.get(getCoreIndex())[index + 1] : ets.length();
-        switch (compressionType.get(getCoreIndex())) {
-            case JPEG:
-                buf = JPEGTools.FindFirstEOI(ets,rawbuffer);
-                //X2TIF.Display(buf, 0, 0);
-                break;
-            default:
-                throw new Error("NOT JPEG!!");
-        }
-    } finally {
-        if (reader != null) {
-            reader.close();
-        }
-    }   
-    return buf; 
+      ets.seek(offset);
+      return JPEGTools.FindFirstEOI(ets, rawbuffer);
+    }
   }
 
   private byte[] decodeTile(int no, int row, int col) throws FormatException, IOException {
@@ -1078,7 +1111,7 @@ public class CellSensReader extends FormatReader {
       }
     }
 
-    Pyramid pyramid = pyramids.get(pyramidIndex);
+    Pyramid pyramid = pyramidMap.get(getCoreIndex());
     for (String dim : pyramid.dimensionOrdering.keySet()) {
       int index = pyramid.dimensionOrdering.get(dim) + 2;
 
@@ -1177,7 +1210,12 @@ public class CellSensReader extends FormatReader {
     return buf;
   }
 
-  private void parseETSFile(RandomAccessInputStream etsFile, String file, int s)
+  /**
+   * Reads one ETS file into a new series.
+   * @return false if hasOrphanEtsFiles and no pyramid in the .vsi matches this file
+   */
+  private boolean parseETSFile(RandomAccessInputStream etsFile, String file, int s,
+                               boolean hasOrphanEtsFiles)
     throws FormatException, IOException
   {
     fileMap.put(core.size() - 1, file);
@@ -1275,7 +1313,48 @@ public class CellSensReader extends FormatReader {
     int[] maxC = new int[maxResolution];
     int[] maxT = new int[maxResolution];
 
-    HashMap<String, Integer> dimOrder = pyramids.get(s).dimensionOrdering;
+    Pyramid pyramid = null;
+    if (hasOrphanEtsFiles) {
+      // claim the unmatched pyramid whose size fits this file's full-resolution tile grid
+      int maxXAtRes0 = 0;
+      int maxYAtRes0 = 0;
+      for (TileCoordinate t : tmpTiles) {
+        if (!usePyramid || t.coordinate[t.coordinate.length - 1] == 0) {
+          maxXAtRes0 = Math.max(maxXAtRes0, t.coordinate[0]);
+          maxYAtRes0 = Math.max(maxYAtRes0, t.coordinate[1]);
+        }
+      }
+      int tw = tileX.get(tileX.size() - 1);
+      int th = tileY.get(tileY.size() - 1);
+      int maxPixelWidth = (maxXAtRes0 + 1) * tw;
+      int maxPixelHeight = (maxYAtRes0 + 1) * th;
+      for (Pyramid p : pyramids) {
+        if (!p.hasEtsFile && p.width != null && p.height != null &&
+          p.width <= maxPixelWidth && p.width >= maxPixelWidth - tw &&
+          p.height <= maxPixelHeight && p.height >= maxPixelHeight - th)
+        {
+          pyramid = p;
+          break;
+        }
+      }
+      if (pyramid == null) {
+        // an orphan: undo everything recorded for it
+        fileMap.remove(core.size() - 1);
+        nDimensions.remove(nDimensions.size() - 1);
+        compressionType.remove(compressionType.size() - 1);
+        tileX.remove(tileX.size() - 1);
+        tileY.remove(tileY.size() - 1);
+        backgroundColor.remove(getCoreIndex());
+        tileOffsets.remove(tileOffsets.size() - 1);
+        return false;
+      }
+    }
+    else {
+      pyramid = pyramids.get(s);
+    }
+    pyramid.hasEtsFile = true;
+    pyramidMap.put(core.size() - 1, pyramid);
+    HashMap<String, Integer> dimOrder = pyramid.dimensionOrdering;
 
     for (TileCoordinate t : tmpTiles) {
       int resolution = usePyramid ? t.coordinate[t.coordinate.length - 1] : 0;
@@ -1371,12 +1450,10 @@ public class CellSensReader extends FormatReader {
       }
     }
 
-    if (pyramids.get(s).width != null) {
-      ms.sizeX = pyramids.get(s).width;
-    }
-    if (pyramids.get(s).height != null) {
-      ms.sizeY = pyramids.get(s).height;
-    }
+    // IMAGE_BOUNDARY gives the image size; without it, fall back to the stored tile grid
+    ms.sizeX = pyramid.width != null ? pyramid.width : (maxX[0] + 1) * tileX.get(tileX.size() - 1);
+    ms.sizeY = pyramid.height != null ? pyramid.height : (maxY[0] + 1) * tileY.get(tileY.size() - 1);
+    ms.seriesMetadata = pyramid.originalMetadata;
     ms.sizeZ = maxZ[0] + 1;
     if (maxC[0] > 0) {
       ms.sizeC *= (maxC[0] + 1);
@@ -1457,6 +1534,7 @@ public class CellSensReader extends FormatReader {
         cols.add(maxX[i] >= 1 ? maxX[i] + 1 : 1);
 
         fileMap.put(core.size() - 1, file);
+        pyramidMap.put(core.size() - 1, pyramid);
         finalResolution = core.size() - initialCoreSize + 1;
 
         tileX.add(tileX.get(tileX.size() - 1));
@@ -1470,6 +1548,7 @@ public class CellSensReader extends FormatReader {
 
       ms.resolutionCount = finalResolution;
     }
+    return true;
   }
 
   private int convertPixelType(int pixelType) throws FormatException {
@@ -1725,6 +1804,12 @@ public class CellSensReader extends FormatReader {
                   if (pyramid != null && pyramid.width == null) {
                     pyramid.width = intValues[2];
                     pyramid.height = intValues[3];
+                  }
+                }
+                else if (tag == TILE_ORIGIN) {
+                  if (pyramid != null && nIntValues >= 2) {
+                    pyramid.tileOriginX = intValues[0];
+                    pyramid.tileOriginY = intValues[1];
                   }
                 }
                 break;
@@ -2549,6 +2634,9 @@ public class CellSensReader extends FormatReader {
 
     public Integer width;
     public Integer height;
+    public Integer tileOriginX;
+    public Integer tileOriginY;
+    public boolean hasEtsFile;
     public Double originX;
     public Double originY;
     public Double physicalSizeX;

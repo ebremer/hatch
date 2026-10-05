@@ -134,12 +134,8 @@ public class SVSReader extends BaseTiffReader {
   }
   
   @Override
-  public byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col) {
-    if (tiffParser == null) {
-      initTiffParser();
-    }
-    int ifd = ((SVSCoreMetadata) getCurrentCore()).ifdIndex[no]; 
-    return getRawBytes(ifds.get(ifd), no, row, col);
+  protected IFD getRawIFD(int no) {
+    return ifds.get(((SVSCoreMetadata) getCurrentCore()).ifdIndex[no]);
   }
 
   /**

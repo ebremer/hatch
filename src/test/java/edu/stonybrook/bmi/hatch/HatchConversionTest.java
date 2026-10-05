@@ -98,7 +98,7 @@ class HatchConversionTest {
                     && ifds.get(last).getImageLength() <= 1024,
                 "smallest level fits the <=1024 validation invariant");
 
-            outBaseTile = tp.getRawTile(ifds.get(0), null, 0, 0);
+            outBaseTile = tp.getRawTile(ifds.get(0), 0, 0);
         }
 
         // ---- byte-level: the base tile is a valid JPEG ----
@@ -112,7 +112,7 @@ class HatchConversionTest {
         byte[] srcBaseTile;
         try (RandomAccessInputStream sin = new RandomAccessInputStream(src.toString())) {
             TiffParser stp = new TiffParser(sin);
-            srcBaseTile = stp.getRawTile(stp.getMainIFDs().get(0), null, 0, 0);
+            srcBaseTile = stp.getRawTile(stp.getMainIFDs().get(0), 0, 0);
         }
         assertArrayEquals(srcBaseTile, outBaseTile,
             "base-level JPEG tile must be transferred verbatim");

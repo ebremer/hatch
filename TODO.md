@@ -13,7 +13,7 @@ of the output). All other items come from reading the code; each cites `file:lin
 - **P3:** cleanup, build hygiene, docs, conventions.
 
 **Counts:** 6 × P0 · 19 × P1 · 16 × P2 · 43 × P3  
-**Done:** all 6 P0 items, plus the P1 JVM-hang item and the P3 `HatchWriter` leak, which were fixed along the way. Regression tests are in `SafeOutputTest` and `HatchConversionTest`.
+**Done:** all P0 and P1 items, plus the P3 `HatchWriter` leak and test-fixture fix. Regression tests are in `SafeOutputTest`, `InputHandlingTest`, `CliTest`, `JPEGToolsTest` and `HatchConversionTest`.
 
 **Suggested order of work**
 1. **Safety PR (all P0).** Path guards (same file, nested dest, name collisions), write to a temp file and atomically move, an `X2TIF` factory that fails cleanly, and the depth == 1 IFD terminator.
@@ -65,33 +65,36 @@ of the output). All other items come from reading the code; each cites `file:lin
 
 ## P1: Wrong output, hard failures on valid input, unreported failures
 
-- [ ] **Pixel-spacing metadata uses the wrong units and differs between formats.**
+- [x] **Pixel-spacing metadata uses the wrong units and differs between formats.**
+  *Done:* every reader now reports mm/pixel from the physical pixel size (SVS falls back to `MPP`). Covered by `InputHandlingTest.pixelSpacingIsRecordedInMillimetres`.
   The XMP field is named `SizePerPixel*InMM` and emitted as DICOM `PixelSpacing`, which is in mm.
   The VSI path (`X2TIF.java:229-238`) actually produces **nm/pixel**: 0.25 µm → `250`.
   The SVS path (`X2TIF.java:252-254`) produces **MPP × 10⁶**: 0.25 µm → `250000`.
   The VSI value is off by 10⁶ and the SVS value by 10⁹, and the two disagree by 1000×.
   *Fix:* compute mm/pixel once from `ppx/ppy` for every reader (`µm / 1000`) and add a unit test.
 
-- [ ] **VSI without physical pixel size fails to convert.** `X2TIF.java:229-234`.
+- [x] **VSI without physical pixel size fails to convert.** `X2TIF.java:229-234`.
   With `ppx == null`, `SetPPS` yields `px = 0/1000`, and then `BigDecimal.ONE.divide(0)` throws `ArithmeticException` in the constructor.
   *Fix:* skip pixel-spacing metadata when calibration is unknown.
 
-- [ ] **Uncalibrated inputs get `XResolution`/`YResolution = 0/1000`.** **[verified]**
+- [x] **Uncalibrated inputs get `XResolution`/`YResolution = 0/1000`.** **[verified]**
   `X2TIF.java:296-297, 322-324`. A zero resolution is invalid and some readers divide by it.
   *Fix:* omit the resolution tags (and `ResolutionUnit`) when the size is unknown.
 
-- [ ] **SVS metadata parsing fails the whole conversion when keys are missing.** `X2TIF.java:242, 252`.
+- [x] **SVS metadata parsing fails the whole conversion when keys are missing.** `X2TIF.java:242, 252`.
   `Double.parseDouble((String) list.get("AppMag"))` and `...get("MPP")` throw an NPE when the key is absent.
   This is outside any try, so a valid SVS without `AppMag`/`MPP` cannot be converted. That includes labels and macros selected via `-s`, SVS files not written by Aperio, and `MetadataLevel.MINIMUM`, where `SVSReader.java:384` stores nothing.
   Because the constructor throws, both the reader stream and the already-open `HatchWriter` leak, one handle per failed file in batch mode.
   *Fix:* treat all XMP metadata as best-effort (null checks plus `NumberFormatException` handling).
 
-- [ ] **SVS photometric/subsampling branch writes an invalid IFD.** `X2TIF.java:370-376`.
+- [x] **SVS photometric/subsampling branch writes an invalid IFD.** `X2TIF.java:370-376`.
+  *Done:* replaced by tags derived from the tiles themselves (next item).
   When `YCbCrSubSampling` is present and not `[2,2]`, `PhotometricInterpretation` is never written for level 0, even though the tag is required.
   `samp` is a `short[]`, which Bioformats `TiffSaver` serializes as type **BYTE**, not SHORT. This mechanism is confirmed: the XMP tag, written from a `short[]`, comes out as BYTE.
   *Fix:* always set photometric, and pass subsampling as `int[]`.
 
-- [ ] **Level-0 photometric/subsampling is hard-coded instead of read from the data.** `X2TIF.java:363-384`.
+- [x] **Level-0 photometric/subsampling is hard-coded instead of read from the data.** `X2TIF.java:363-384`.
+  *Done:* Photometric and YCbCrSubSampling now come from the first stored tile's SOF/APP14/JFIF markers, and every tile must match. **[verified on real data]** 5 of the 6 VSIs in `/d/hatchtest` store 4:2:2 tiles; their old outputs (tagged `[1,1]`) fail to decode through libtiff's JPEG codec.
   VSI and TIFF inputs are always tagged `YCbCr` with `[1,1]`.
   A 4:2:0 JPEG tagged `[1,1]` draws libtiff warnings and breaks strict readers. The test fixture already does this: ImageIO emits 4:2:0.
   An RGB JPEG (Adobe APP14 transform=0) tagged YCbCr decodes with wrong colors.
@@ -100,7 +103,8 @@ of the output). All other items come from reading the code; each cites `file:lin
   SVS reads its tags from `getIFDs().get(0)` (`X2TIF.java:368-371`) even when `-s` selects a different IFD.
   *Fix:* expose the IFD actually being read (e.g. `getCurrentIFD()`) and copy Photometric/YCbCrSubSampling from it. Failing that, parse the first tile's SOF/APP14 markers.
 
-- [ ] **Non-JPEG or non-RGB8 inputs are never rejected.** `X2TIF.java:128-131`.
+- [x] **Non-JPEG or non-RGB8 inputs are never rejected.** `X2TIF.java:128-131`.
+  *Done:* each reader's `getRawTileLayout()` checks the IFD/ETS actually read, and X2TIF checks for UINT8, 3 channels and one plane before writing anything.
   The code says "trying JPEG...no promises", and `.vsi`/`.tif` compression is never checked; `xcompression` stays null for VSI, so the gate never fires.
   - For VSI, a JPEG-2000/RAW/lossless ETS reaches `throw new Error("NOT JPEG!!")` (`CellSensReader.java:1043`) at the first tile, *after* the output file exists. That `Error` gets past every `catch (Exception)`.
   - Multichannel fluorescence or Z/EFI-stack VSIs convert only plane 0 (`X2TIF.java:408` always passes `no=0`).
@@ -113,7 +117,8 @@ of the output). All other items come from reading the code; each cites `file:lin
   `TiffParser.getRawTile` validates nothing either: its compression check is commented out (`TiffParser.java:1393`). Row/col are not range-checked; on an `OnDemandLongArray`, an out-of-range index reads unrelated bytes as a tile offset.
   *Fix:* check the IFD/series actually being read, not a global key. In `getRawTile`, range-check row/col. Before writing anything, check that compression code is 7, `UINT8`, `RGBChannelCount == 3`, `imageCount == 1` and that the input is tiled; fail with a clear `FormatException` otherwise. Replace the `Error` with `FormatException`.
 
-- [ ] **Missing or sparse tiles become invalid tile data, in every reader.**
+- [x] **Missing or sparse tiles become invalid tile data, in every reader.**
+  *Done:* readers return `null`; X2TIF writes one cached placeholder in the series' background colour, encoded like the real tiles (`JPEGTools.blankTile`).
   For TIFF/SVS, `TiffParser.getRawTile` returns a **zero-filled raw buffer** when `TileByteCount == 0` or the offset is past end-of-file (`TiffParser.java:1431-1436`). That buffer is written as a JPEG, so level 0 already contains an undecodable tile. `ImageIO.read` then returns null, and the run ends in one of three ways: `Error("NW TILE NULL!!!")`, an NPE in `Shrink` (`Pyramid.java:158`), or a silently blank quadrant. This affects GDAL `SPARSE_OK` files and slides with omitted tiles (OpenSlide special-cases these for Aperio). The same branch also hands back the caller's `buf` (aliasing); today every caller passes `null`.
   For VSI, `CellSensReader.java:996-1022` has the following problems:
   - The stored background colour is computed and then painted over with `Color.BLACK`.
@@ -124,7 +129,8 @@ of the output). All other items come from reading the code; each cites `file:lin
   *Effect:* sparse (tissue-detected) brightfield VSIs show black rectangles on a white background at every level, and strict readers such as libtiff and OpenSlide reject the sampling mismatch.
   *Fix:* use one shared placeholder generator for all readers: one JPEG per series, cached and filled with the background colour (white if unset). Encode it with the same sampling as the real tiles, and check the write result.
 
-- [ ] **For `.tif`/`.svs`, the tile grid comes from IFD 0 but tiles are read from the selected IFD.**
+- [x] **For `.tif`/`.svs`, the tile grid comes from IFD 0 but tiles are read from the selected IFD.**
+  *Done:* the grid comes from `getRawTileLayout()`, which shares `getRawIFD()` with the tile reads.
   `getOptimalTileWidth/Height` always read `ifds.get(0)` (`MinimalTiffReader.java:450-487`), while `getRawBytes` reads `ifds.get(getSeries())` (`MinimalTiffReader.java:300-304`) and indexes with *that* IFD's `TilesPerRow`.
   On top of that, the height falls back to the 1 MB/row-bytes heuristic for tiles over 10 Mpx, or for height ≤ 1.
   - *Scenario:* a `.tif` whose IFD 0 is a striped preview and whose IFD 1 is the tiled full-res image. Tiles land in the wrong place, then an `ArrayIndexOutOfBoundsException` is thrown.
@@ -132,36 +138,40 @@ of the output). All other items come from reading the code; each cites `file:lin
 
   *Fix:* in X2TIF, take `TileWidth`/`TileLength`/`TilesPerRow`/`TilesPerColumn` from the same IFD that `getRawBytes` reads, without the openBytes heuristics.
 
-- [ ] **Regression in the IFD-chain offset rule silently drops images.** `TiffParser.java:1349`.
+- [x] **Regression in the IFD-chain offset rule silently drops images.** `TiffParser.java:1349`.
+  *Done:* matches upstream now. There is no unit test: it needs a 2–4 GiB classic TIFF.
   The fork tests `in.length() > Integer.MAX_VALUE`, where upstream 8.3.0 tests `>= 2^32`. In a classic TIFF of 2–4 GiB whose IFD chain points backwards (common after `tiffset`, or after de-identification rewrites IFD0 at the end of the file), 4 GiB is added to the next offset. The offset then lands past EOF and the IFD walk stops, so pyramid levels, labels, or the base image itself are silently missing.
   *Fix:* use `in.length() >= 0x100000000L`.
 
-- [ ] **Replace all `throw new Error(...)` with exceptions.** `Error` gets past `catch (Exception)` in `Hatch` and is lost in batch futures, and most of these sites drop the cause. The sites:
+- [x] **Replace all `throw new Error(...)` with exceptions.** `Error` gets past `catch (Exception)` in `Hatch` and is lost in batch futures, and most of these sites drop the cause. The sites:
   - `CellSensReader.java:1043`
   - `TiffParser.java:1453` (grayscale/other-photometric JPEG with JPEGTables). That method also reads photometric even when there are no tables, so a file without a Photometric tag hits an NPE (`IFD.java:716-717`).
   - `X2TIF.java:135, 345, 385, 416`
   - `Pyramid.java:294`
   - `JPEGTools.java:60, 62`
 
-- [ ] **A `.vsi` without its `_name_/stack*` folder crashes with an opaque error.** `CellSensReader.java:952`, `648-656`.
+- [x] **A `.vsi` without its `_name_/stack*` folder crashes with an opaque error.** `CellSensReader.java:952`, `648-656`.
+  *Done:* **[verified]** with a copied `.vsi`, conversion now fails with "Missing expected .ets files in …".
   A missing ETS folder only produces a warning. `MaxImage` then picks the VSI's own IFD, and `tileMap.get(...)` throws `IndexOutOfBoundsException: Index 0 out of bounds for length 0`.
   The same happens when `IMAGE_BOUNDARY` is missing: the null guard at `CellSensReader.java:1374-1379` leaves `sizeX = 0`.
   *Fix:* fail in `setId` with "ETS data folder not found: …". Throw a `FormatException` when the selected series isn't ETS-backed, and fall back to `cols*tileX` for the size.
 
-- [ ] **Orphan/extra ETS files are mapped to pyramids by position.** `CellSensReader.java:700-705, 1278, 1374`.
+- [x] **Orphan/extra ETS files are mapped to pyramids by position.** `CellSensReader.java:700-705, 1278, 1374`.
+  *Done:* ported upstream's size matching and `frame_*.ets` filter, plus an explicit core→pyramid map that is also used for metadata. No orphan sample exists in the corpus, so this path has only been reviewed, not run.
   ETS file *s* is blindly paired with `pyramids.get(s)`. A stale extra stack directory either throws an IOOBE in `setId` or, if it sorts first, gives the main image the wrong pyramid's dimensions, tile grid and physical size.
   *Fix:* port upstream's `hasOrphanEtsFiles` matching and its `frame_*.ets` filter.
 
-- [ ] **VSI `TILE_ORIGIN` is ignored.** `CellSensReader.java:179, 2124`; upstream applies it.
+- [x] **VSI `TILE_ORIGIN` is ignored.** `CellSensReader.java:179, 2124`; upstream applies it.
+  *Done:* parsed as upstream does. A non-zero origin widens the output to the stored grid (offset logged), so no image pixels are dropped. None of the corpus VSIs has a non-zero origin, so this path is untested on real data.
   With a non-zero origin, the output is misregistered by the origin offset, and `ceil(sizeX/tileW)` can drop a real tile column/row at the right/bottom edge.
   *Fix:* parse `TILE_ORIGIN`. Either size the output from the full grid (`cols*tileX`) and record the offset, or re-encode the edge tiles.
 
-- [ ] **Hidden `-jp2` flag leads straight to a crash.** `HatchParameters.java:49`, `X2TIF.java:132-133, 345`.
+- [x] **Hidden `-jp2` flag leads straight to a crash.** `HatchParameters.java:49`, `X2TIF.java:132-133, 345`.
   JPEG-2000 passes the compression check, then hits `throw new Error("Should never get here")`.
   An `Error` gets past `catch (Exception)`: single-file mode prints a stack trace, and batch mode loses it silently (see the next item).
   *Fix:* remove the flag until JPEG-2000 is actually supported.
 
-- [ ] **Batch failures can vanish, and the exit code is always 0.** **[verified, exit code]**
+- [x] **Batch failures can vanish, and the exit code is always 0.** **[verified, exit code]**
   `Hatch.java:68` drops the `Future` from `engine.submit(...)`.
   Anything thrown that isn't caught inside `call()` is discarded: `OutOfMemoryError`, `Error`s, and `Validate.file`'s `IllegalArgumentException` at `Hatch.java:213, 218, 233`, which sits outside the try.
   `main` returns 0 even for a missing `-src` or failed conversions, so scripts and schedulers cannot detect failure.
@@ -172,13 +182,13 @@ of the output). All other items come from reading the code; each cites `file:lin
   That exception skips `engine.shutdown()`, and the prestarted non-daemon pool threads keep the JVM alive forever.
   *Fix:* call `shutdown()` in `finally` and catch `UncheckedIOException`.
 
-- [ ] **CLI arguments are not validated up front.** **[verified]**
+- [x] **CLI arguments are not validated up front.** **[verified]**
   `-fp 0` passes `PositiveInteger` (`PositiveInteger.java:11` checks `< 0`) and then crashes with `maximumPoolSize must be positive`.
   `-q` outside `(0,1]` is only caught by ImageIO after level 0 has been written (`Quality out of bounds!`).
   A non-numeric `-s` throws an uncaught `NumberFormatException` at `Hatch.java:137`.
   *Fix:* validate all three in `HatchParameters` (JCommander validators).
 
-- [ ] **`new BufferedImage(w, h, bi.getType())` breaks on `TYPE_CUSTOM` images.**
+- [x] **`new BufferedImage(w, h, bi.getType())` breaks on `TYPE_CUSTOM` images.**
   `Pyramid.java:149, 234, 257`. ImageIO returns `TYPE_CUSTOM` (0) for JPEGs with an embedded non-sRGB ICC profile, and `new BufferedImage(...,0)` then throws `IllegalArgumentException`.
   *Fix:* allocate `TYPE_3BYTE_BGR` explicitly (input is already restricted to RGB8).
 
@@ -266,6 +276,7 @@ of the output). All other items come from reading the code; each cites `file:lin
     - `TiffParser` is not thread-safe (shared stream, mutable `codecOptions`). That is fine for today's one-reader-per-job design, but document it.
 
 - [ ] **`JPEGBuffer.GetBufferImage` turns decode failures into `null`.** `JPEGBuffer.java:31-38`.
+  *Progress:* `Dump2ByteArray` now throws `UncheckedIOException` with the cause and disposes the writer in `finally`. `GetBufferImage` still returns null.
   The caller then fails with an NPE or `Error("NW TILE NULL!!!")` (`Pyramid.java:294`), and the original cause is lost.
   `JPEGTools.Dump2ByteArray` wraps exceptions in `new Error(msg)`, also without the cause (`JPEGTools.java:60-62`), and `dispose()` isn't in a `finally`.
   *Fix:* propagate `IOException`/`UncheckedIOException` with the cause attached.
@@ -350,11 +361,12 @@ of the output). All other items come from reading the code; each cites `file:lin
 
   Unused: `getIFDs()` (deprecated), `getFirstIFDEntry`, `getThumbnailIFDs`, `getNonThumbnailIFDs`, and ~450 lines of `getTile`/`getSamples`/`unpackBytes` reachable only from `openBytes`.
 - [ ] `CellSensReader` dead code: `openBytes`/`decodeTile`/`openThumbBytes`/`getIFDIndex`, the J2K/lossless/APNG/BMP branches, the unused `reader` + `finally`, `options` and `tileSize` in `getRaw` (`CellSensReader.java:1025-1049`), the always-false `tileMap.get(...) == null` check (`CellSensReader.java:952`), the unused `java.util.logging` imports, and discarded locals (`headerSize`, `version`, `colorspace`, `compressionQuality`, `tileZ`).
+  *Progress:* the 8 unused imports and the always-false `tileMap` null check are gone. `getRaw` no longer has the unused `reader`/`options`/`tileSize`.
 
 ### Tests and docs
 - [ ] Add regression tests for every P0/P1 item above: CLI path logic (same file, nested dest, collisions, `-o`/`-r`), depth == 1, missing calibration, non-JPEG input rejection, exit codes.
 - [ ] Extend the synthetic fixtures. Today they never produce JPEGTables (the main Aperio path), sparse/zero-byte tiles, BigTIFF input, RGB photometric, a striped first IFD or an uncalibrated VSI, and only tile (0,0) is byte-compared.
 - [ ] Add small real SVS and VSI fixtures, e.g. OpenSlide's freely licensed test slides (`CMU-1-Small-Region.svs`). Today only synthetic TIFFs exercise the readers, so the SVS and VSI paths are untested.
 - [ ] Validate outputs with an independent reader in CI (libtiff `tiffinfo`, or Python `tifffile` + `imagecodecs`), not only the project's own `TiffParser`.
-- [ ] Fix the test fixture: it declares `YCbCrSubSampling [1,1]` for ImageIO's 4:2:0 JPEGs (`TestFixtures.java:65`).
+- [x] Fix the test fixture: it declares `YCbCrSubSampling [1,1]` for ImageIO's 4:2:0 JPEGs (`TestFixtures.java:65`).
 - [ ] README: document every flag (`-fp -f -o -r -validate -validateonly -q -s -v`), the JDK 21 requirement, memory sizing, supported input (8-bit RGB, JPEG-compressed, tiled), the output layout, and the ≤1024 px smallest-level rule.

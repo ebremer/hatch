@@ -13,6 +13,7 @@ import loci.common.services.ServiceException;
 import loci.common.services.ServiceFactory;
 import loci.formats.CoreMetadata;
 import loci.formats.FormatException;
+import loci.formats.FormatTools;
 import loci.formats.meta.IMetadata;
 import loci.formats.meta.MetadataRetrieve;
 import loci.formats.ome.OMEPyramidStore;
@@ -25,7 +26,7 @@ import ome.xml.model.enums.DimensionOrder;
 import ome.xml.model.enums.PixelType;
 import ome.xml.model.primitives.PositiveInteger;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
+import java.math.MathContext;
 import java.util.Map;
 import java.util.logging.LogManager;
 
@@ -53,11 +54,10 @@ public class X2TIF implements AutoCloseable {
     private final HatchParameters params;
     private HatchWriter writer;
     private IMetadata meta;
-    private byte compression;
+    private RawTileLayout layout;
     private static final Logger LOGGER;
     private XMP xmp = null;
-    private String xcompression = null;
-    
+
     static {
          try {
              LogManager.getLogManager().readConfiguration(X2TIF.class.getResourceAsStream("/logging.properties"));
@@ -66,7 +66,7 @@ public class X2TIF implements AutoCloseable {
          }
          LOGGER = Logger.getLogger(X2TIF.class.getName());
      }
-    
+
     public X2TIF(HatchParameters params, String src, String dest, Integer series) throws FormatException, IOException {
         time = new StopWatch();
         inputFile = src;
@@ -88,16 +88,6 @@ public class X2TIF implements AutoCloseable {
             }
             reader.setMetadataStore(omexml);
             reader.setId(inputFile);
-            //reader.getGlobalMetadata().forEach((k,v)->{
-              //  System.out.println("META : "+k+"   "+v);
-            //});
-            //DicomWriter ha;
-            if (reader instanceof SVSReader rrr) {               
-                if (reader.getGlobalMetadata().containsKey("Compression")) {
-                    xcompression = (String) rrr.getGlobalMetadata().get("Compression");
-                    xcompression = xcompression.trim();
-                }
-            }
             if (series==null) {
                 maximage = MaxImage(reader);
             } else {
@@ -107,33 +97,33 @@ public class X2TIF implements AutoCloseable {
                 throw new IllegalArgumentException("Series " + series + " does not exist in " + src);
             }
             reader.setSeries(maximage);
-            tileSizeX = reader.getOptimalTileWidth();
-            tileSizeY = reader.getOptimalTileHeight();
-            width = reader.getSizeX();
-            height = reader.getSizeY();
+            // checks the tiles of this series can be copied verbatim, and gives their exact grid
+            layout = reader.getRawTileLayout();
+            if (reader.getPixelType() != FormatTools.UINT8 || reader.getRGBChannelCount() != 3) {
+                throw new FormatException("Series " + maximage + " is " + FormatTools.getPixelTypeString(reader.getPixelType())
+                    + " with " + reader.getRGBChannelCount() + " channel(s) per pixel; only 8-bit RGB images are supported");
+            }
+            if (reader.getImageCount() != 1) {
+                throw new FormatException("Series " + maximage + " has " + reader.getImageCount()
+                    + " planes (Z/C/T); only single-plane images are supported");
+            }
+            tileSizeX = layout.tileWidth();
+            tileSizeY = layout.tileHeight();
+            width = layout.width();
+            height = layout.height();
             MetadataRetrieve retrieve = (MetadataRetrieve) reader.getMetadataStore();
             ppx = retrieve.getPixelsPhysicalSizeX(maximage);
-            ppy = retrieve.getPixelsPhysicalSizeY(maximage);            
+            ppy = retrieve.getPixelsPhysicalSizeY(maximage);
             SetPPS();
             if (params.verbose) {
                 LOGGER.log(Level.INFO, "Image Size   : {0}x{1}", new Object[]{width, height});
                 LOGGER.log(Level.INFO, "Tile size    : {0}x{1}", new Object[]{tileSizeX, tileSizeY});
-                LOGGER.log(Level.INFO, "Compression  : {0}", xcompression);
-            }
-            //String xml = service.getOMEXML(omexml);
-            //Systsm.out.println(xml);
-            if (xcompression==null) {
-                if (params.verbose) {
-                    LOGGER.log(Level.INFO,"NULL compression specified...trying JPEG...no promises...");
-                }
-            } else if (!"JPEG".equals(xcompression) && !("JPEG-2000".equals(xcompression) && params.jp2)) {
-                throw new IllegalArgumentException("Hatch can only convert images that have JPEG compression. (" + src + ")");
             }
             int size = Math.max(width, height);
             int ss = (int) Math.ceil(Math.log(size)/Math.log(2));
             int tiless = (int) Math.ceil(Math.log(tileSizeX)/Math.log(2));
             depth = ss-tiless+2;
-            TileSize = reader.getOptimalTileHeight() * reader.getOptimalTileWidth() * 24;
+            TileSize = tileSizeX * tileSizeY * 24;
             if (params.verbose) {
                 LOGGER.log(Level.INFO, "# of scales to be generated : {0}", depth);
             }
@@ -175,9 +165,12 @@ public class X2TIF implements AutoCloseable {
         }
     }
 
+    /** Best-effort descriptive metadata: missing or malformed values are simply left out. */
     private void FindMeta(XMP xmp) {
+        BigDecimal spacingX = mmPerPixel(ppx);
+        BigDecimal spacingY = mmPerPixel(ppy);
         switch (reader) {
-            case CellSensReader r -> {                
+            case CellSensReader r -> {
                 OMEPyramidStore mx = (OMEPyramidStore) reader.getMetadataStore();
                 try {
                     String objectiveID = mx.getObjectiveSettingsID(maximage);
@@ -208,41 +201,54 @@ public class X2TIF implements AutoCloseable {
                         }
                     }
                 } catch (NullPointerException ex) {}
-                BigDecimal xpp = BigDecimal.valueOf(px.doubleValue()).divide(BigDecimal.TEN);        
-                BigDecimal ypp = BigDecimal.valueOf(py.doubleValue()).divide(BigDecimal.TEN);
-                xpp = xpp.divide(BigDecimal.valueOf(1000d));
-                ypp = ypp.divide(BigDecimal.valueOf(1000d));
-                xpp = BigDecimal.ONE.divide(xpp, 5, RoundingMode.HALF_UP);
-                ypp = BigDecimal.ONE.divide(ypp, 5, RoundingMode.HALF_UP);
-                xpp = xpp.multiply(BigDecimal.valueOf(1000d));
-                ypp = ypp.multiply(BigDecimal.valueOf(1000d));
-                xmp.setSizePerPixelXinMM(xpp);
-                xmp.setSizePerPixelYinMM(ypp);
             }
             case SVSReader r -> {
                 Map<String,Object> list = r.getSeriesMetadata();
-                xmp.setMagnification(BigDecimal.valueOf(Double.parseDouble((String) list.get("AppMag"))));
+                BigDecimal magnification = number(list.get("AppMag"));
+                if (magnification != null) {
+                    xmp.setMagnification(magnification);
+                }
                 xmp.setManufacturer((String) list.get("Image Description"));
                 xmp.setManufacturerDeviceName((String) list.get("ScanScope ID"));
-                if (list.containsKey("Exposure Time")) {
-                    Double exposuretime = Double.valueOf((String) list.get("Exposure Time"));
-                    if (list.containsKey("Exposure Scale")) {
-                        Double exposurescale = Double.valueOf((String) list.get("Exposure Scale"));                
-                        xmp.setExposureTime( BigDecimal.valueOf(exposuretime).multiply(BigDecimal.valueOf( exposurescale ).multiply(BigDecimal.valueOf(1000d))));
-                    }
+                BigDecimal exposureTime = number(list.get("Exposure Time"));
+                BigDecimal exposureScale = number(list.get("Exposure Scale"));
+                if (exposureTime != null && exposureScale != null) {
+                    xmp.setExposureTime(exposureTime.multiply(exposureScale).multiply(BigDecimal.valueOf(1000)));
                 }
-                BigDecimal mpp = BigDecimal.valueOf(Double.parseDouble((String) list.get("MPP"))).multiply(BigDecimal.valueOf(1000000));
-                xmp.setSizePerPixelXinMM(mpp);
-                xmp.setSizePerPixelYinMM(mpp);
-                //IFD ifd = r.getCurrentIFD();
-                //byte[] iccprofile = (byte[]) ifd.getIFDValue(34675);
-                //xmp.setICCColorProfile(iccprofile);
-                //xmp.setICCColorProfile((String) list.get("ICC Profile"));
+                BigDecimal mpp = number(list.get("MPP"));
+                if (spacingX == null && mpp != null && mpp.signum() > 0) {
+                    spacingX = mpp.movePointLeft(3); // microns -> mm
+                    spacingY = spacingX;
+                }
             }
             default -> {}
         }
+        if (spacingX != null && spacingY != null) {
+            xmp.setSizePerPixelXinMM(spacingX);
+            xmp.setSizePerPixelYinMM(spacingY);
+        }
     }
-    
+
+    private static BigDecimal mmPerPixel(Length size) {
+        Number mm = size == null ? null : size.value(UNITS.MILLIMETER);
+        if (mm == null || !(mm.doubleValue() > 0) || Double.isInfinite(mm.doubleValue())) {
+            return null;
+        }
+        // drop unit-conversion noise (0.2505 um -> 2.5049999999999996E-4 mm)
+        return new BigDecimal(mm.doubleValue()).round(new MathContext(12)).stripTrailingZeros();
+    }
+
+    private static BigDecimal number(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(value.toString().trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
     private int MaxImage(FormatReader reader) {
         int ii = 0;
         int maxseries = 0;
@@ -257,28 +263,25 @@ public class X2TIF implements AutoCloseable {
         if (params.verbose) LOGGER.log(Level.INFO, "Max image is series {0}", maxseries);
         return maxseries;
     }
-    
+
     public int effSize(int tileX, int width) {
         return (tileX + tileSizeX) < width ? tileSizeX : width - tileX;
     }
-    
+
+    /** TIFF resolution in pixels per cm, or null when the source has no physical pixel size. */
     private void SetPPS() {
-        Double physicalSizeX = ppx == null || ppx.value(UNITS.MICROMETER) == null ? null : ppx.value(UNITS.MICROMETER).doubleValue();
-        if (physicalSizeX == null || physicalSizeX == 0) {
-            physicalSizeX = 0d;
-        } else {
-            physicalSizeX = 1d / physicalSizeX;
-        }
-        Double physicalSizeY = ppy == null || ppy.value(UNITS.MICROMETER) == null ? null : ppy.value(UNITS.MICROMETER).doubleValue();
-        if (physicalSizeY == null || physicalSizeY == 0) {
-            physicalSizeY = 0d;
-        } else {
-            physicalSizeY = 1d / physicalSizeY;
-        }
-        px = new TiffRational((long) (physicalSizeX * 1000 * 10000), 1000);
-        py = new TiffRational((long) (physicalSizeY * 1000 * 10000), 1000);
+        px = pixelsPerCm(ppx);
+        py = pixelsPerCm(ppy);
     }
-    
+
+    private static TiffRational pixelsPerCm(Length size) {
+        Number um = size == null ? null : size.value(UNITS.MICROMETER);
+        if (um == null || !(um.doubleValue() > 0) || Double.isInfinite(um.doubleValue())) {
+            return null;
+        }
+        return new TiffRational((long) (10000d / um.doubleValue() * 1000), 1000);
+    }
+
     public short[] byte2short(byte[] byteArray) {
         short[] shortArray = new short[byteArray.length];
         for (int i = 0; i < shortArray.length; i++) {
@@ -286,120 +289,94 @@ public class X2TIF implements AutoCloseable {
         }
         return shortArray;
     }
-    
+
+    /** JPEG structure of the first tile the source stores; every other tile must match it. */
+    private JPEGTools.JpegInfo firstStoredTile(byte[] rawbuffer) throws FormatException, IOException {
+        for (int y=0; y<layout.tilesDown(); y++) {
+            for (int x=0; x<layout.tilesAcross(); x++) {
+                byte[] raw = reader.getRawBytes(rawbuffer, 0, y, x);
+                if (raw != null) {
+                    return JPEGTools.inspect(raw);
+                }
+            }
+        }
+        throw new FormatException("Series " + maximage + " stores no tiles");
+    }
+
     private void readWriteTiles() throws FormatException, IOException {
         if (params.verbose) {
             LOGGER.log(Level.INFO,"transferring image data...");
         }
-        reader.setSeries(maximage);       
-        int nXTiles = width / tileSizeX;
-        int nYTiles = height / tileSizeY;
-        if (nXTiles * tileSizeX != width) nXTiles++;
-        if (nYTiles * tileSizeY != height) nYTiles++;
+        reader.setSeries(maximage);
+        int nXTiles = layout.tilesAcross();
+        int nYTiles = layout.tilesDown();
         int numtiles = nXTiles*nYTiles;
         pyramid = new Pyramid(params,nXTiles,nYTiles,tileSizeX,tileSizeY,width,height);
         pyramid.setSource(inputFile);
         byte[] rawbuffer = new byte[TileSize+20];
+        JPEGTools.JpegInfo jpeg = firstStoredTile(rawbuffer);
+        if (jpeg.components() != 3) {
+            throw new FormatException("Tiles have " + jpeg.components() + " colour component(s); only RGB JPEG tiles are supported");
+        }
         loci.formats.tiff.IFD ifd = new loci.formats.tiff.IFD();
-        ifd.put(IFD.RESOLUTION_UNIT, 3);
-        ifd.put(IFD.X_RESOLUTION, px);
-        ifd.put(IFD.Y_RESOLUTION, py);
         ifd.put(IFD.TILE_WIDTH, tileSizeX);
         ifd.put(IFD.TILE_LENGTH, tileSizeY);
         ifd.put(IFD.IMAGE_WIDTH, (long) width);
         ifd.put(IFD.IMAGE_LENGTH, (long) height);
         ifd.put(IFD.TILE_OFFSETS, new long[numtiles]);
         ifd.put(IFD.TILE_BYTE_COUNTS, new long[numtiles]);
-        //DicomWriter ha;
-        //DicomJSONProvider meta = new DicomJSONProvider();
-       //meta.readTagSource(inputFile);
         if (xmp!=null) {
             ifd.putIFDValue(700, byte2short(xmp.getXMPString().getBytes(StandardCharsets.UTF_8)));
         }
-        if (xcompression==null) {
-            xcompression = "UNKNOWN";
-        }
-        switch (xcompression) {
-            case "JPEG", "UNKNOWN" -> {
-                compression = 0;
-                ifd.put(IFD.COMPRESSION, 7);
-            }
-            default -> throw new Error("Should never get here");
-        }
-        //case "JPEG-2000":
-//                compression = 2;
-        //ifd.put(IFD.COMPRESSION, 34712);
-        //              ifd.put(IFD.COMPRESSION, 33005);
-        //ifd.put(IFD.COMPRESSION, 33003);
-        //            break;
+        ifd.put(IFD.COMPRESSION, 7);
         ifd.put(IFD.BITS_PER_SAMPLE, new int[] {8, 8, 8});
         ifd.put(IFD.SAMPLES_PER_PIXEL, 3);
         ifd.put(IFD.PLANAR_CONFIGURATION, 1);
         ifd.put(IFD.SOFTWARE, Hatch.software);
         ifd.putIFDValue(IFD.IMAGE_DESCRIPTION, "");
         ifd.put(IFD.ORIENTATION, 1);
-        ifd.put(IFD.X_RESOLUTION, px);
-        ifd.put(IFD.Y_RESOLUTION, py);
-        ifd.put(IFD.RESOLUTION_UNIT, 3);
+        if (px != null && py != null) {
+            ifd.put(IFD.X_RESOLUTION, px);
+            ifd.put(IFD.Y_RESOLUTION, py);
+            ifd.put(IFD.RESOLUTION_UNIT, 3);
+        }
         ifd.put(IFD.SAMPLE_FORMAT, new int[] {1, 1, 1});
-        if (inputFile.toLowerCase().endsWith(".vsi")) {
-            //ifd.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {2, 1});
-            ifd.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {1, 1});
-            ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
-        } else if (reader instanceof SVSReader rrr) {
-            IFDList list = rrr.getIFDs();
-            IFD rah = list.get(0);
-            if (reader.getIFDs().get(0).containsKey(IFD.Y_CB_CR_SUB_SAMPLING)) {
-                short[] samp = reader.getIFDs().get(0).getIFDShortArray(IFD.Y_CB_CR_SUB_SAMPLING);
-                if ((samp[0]==2)&&(samp[1]==2)) {
-                    ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, (int) rah.get(IFD.PHOTOMETRIC_INTERPRETATION));
-                } else {
-                    ifd.putIFDValue(IFD.Y_CB_CR_SUB_SAMPLING, samp);
-                }                
-            } else {
-                ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
-                ifd.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {1, 1});
-            }            
-        } else if (reader instanceof TiffReader) {
-            ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
-            ifd.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {1, 1});
+        // the base level carries the source's JPEG streams, so its tags must describe them
+        if (jpeg.rgb()) {
+            ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.RGB.getCode());
         } else {
-            throw new Error("IFD.PHOTOMETRIC_INTERPRETATION ERROR!!!");
+            ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
+            ifd.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {jpeg.hSubsampling(), jpeg.vSubsampling()});
         }
-       // JPEG2000Codec codec = new JPEG2000Codec();
-        byte method = 0;
-        if (reader instanceof CellSensReader) {
-            method = 1;
-        } else if (reader instanceof SVSReader) {
-            method = 2;
-        } else if (reader instanceof TiffReader) {
-            method = 3;
-        }
+        byte[] blank = null;
+        int missing = 0;
         for (int y=0; y<nYTiles; y++) {
             if (params.verbose) {
                 float perc = 100f*y/nYTiles;
                 LOGGER.log(Level.INFO,String.format("%.2f%%",perc));
             }
             for (int x=0; x<nXTiles; x++) {
-                //int tileX = x * tileSizeX;
-                //int tileY = y * tileSizeX;
-                //int effTileSizeX = (tileX + tileSizeX) < width ? tileSizeX : width - tileX;
-                //int effTileSizeY = (tileY + tileSizeY) < height ? tileSizeY : height - tileY;
-                byte[] raw;
-                raw = switch (method) {
-                    case 1, 2, 3 -> reader.getRawBytes(rawbuffer, 0, y, x);
-                    default -> reader.openCompressedBytes(0, x, y);
-                };
-                //byte[] raw = reader.getRawBytes(rawbuffer, 0, y, x);
-
+                byte[] raw = reader.getRawBytes(rawbuffer, 0, y, x);
+                if (raw == null) {
+                    // not stored in the source: stand in a background tile encoded like the real ones
+                    if (blank == null) {
+                        blank = JPEGTools.blankTile(tileSizeX, tileSizeY, layout.background(), jpeg, params.quality);
+                    }
+                    raw = blank;
+                    missing++;
+                } else if (!jpeg.equals(JPEGTools.inspect(raw))) {
+                    throw new FormatException("Tile [" + y + "," + x + "] is encoded as " + JPEGTools.inspect(raw)
+                        + " but the first tile as " + jpeg + "; one TIFF level cannot describe both");
+                }
                 // with no reduced levels to follow, the last base tile must terminate the IFD chain
                 boolean last = (depth <= 1) && (x == nXTiles-1) && (y == nYTiles-1);
                 writer.writeIFDStrips(ifd, raw, last, x*tileSizeX, y*tileSizeY);
-                switch (compression) {
-                    case 0 -> pyramid.put(raw, x, y);
-                    default -> throw new Error("Unknown Compression!");
-                }
-                            }
+                pyramid.put(raw, x, y);
+            }
+        }
+        if (missing > 0) {
+            LOGGER.log(Level.INFO, "{0} of {1} tiles are not stored in {2}; filled with background colour",
+                new Object[]{missing, numtiles, inputFile});
         }
         if (params.verbose) {
             time.Cumulative();
@@ -438,7 +415,8 @@ public class X2TIF implements AutoCloseable {
             ifd.put(IFD.IMAGE_LENGTH, (long) pyramid.getHeight());
             ifd.put(IFD.TILE_OFFSETS, new long[numtiles]);
             ifd.put(IFD.TILE_BYTE_COUNTS, new long[numtiles]);
-            ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());            
+            // reduced levels are re-encoded by ImageIO as JFIF YCbCr 4:2:0 (the TIFF default subsampling)
+            ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
             for (int y=0; y<pyramid.gettilesY(); y++) {
                 for (int x=0; x<pyramid.gettilesX(); x++) {
                     byte[] b = pyramid.GetImageBytes(x, y);
@@ -447,7 +425,7 @@ public class X2TIF implements AutoCloseable {
             }
         }
     }
-    
+
     /**
      * Writes the pyramid to a sibling ".part" file and moves it over the destination only once
      * it is complete, so a failure never leaves a partial file and never destroys an existing one.

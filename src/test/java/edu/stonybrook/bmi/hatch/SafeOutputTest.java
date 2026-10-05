@@ -57,7 +57,7 @@ class SafeOutputTest {
         Path src = slide(dir, "a.tif");
         byte[] before = Files.readAllBytes(src);
 
-        Hatch.main(new String[] {"-src", src.toString(), "-dest", src.toString(), "-o"});
+        assertEquals(1, Hatch.run(new String[] {"-src", src.toString(), "-dest", src.toString(), "-o"}));
 
         assertArrayEquals(before, Files.readAllBytes(src), "-src X -dest X -o must leave X untouched");
     }
@@ -68,10 +68,11 @@ class SafeOutputTest {
         Path dest = dir.resolve("out.tif");
         Files.write(dest, OLD_OUTPUT);
 
-        Hatch.main(new String[] {"-src", src.toString(), "-dest", dest.toString()});
+        assertEquals(1, Hatch.run(new String[] {"-src", src.toString(), "-dest", dest.toString()}),
+            "refusing to replace an output is reported as a failure");
         assertArrayEquals(OLD_OUTPUT, Files.readAllBytes(dest), "existing output kept without -o");
 
-        Hatch.main(new String[] {"-src", src.toString(), "-dest", dest.toString(), "-o"});
+        assertEquals(0, Hatch.run(new String[] {"-src", src.toString(), "-dest", dest.toString(), "-o"}));
         assertTrue(isCompletePyramid(dest), "-o replaces it with a complete pyramid");
     }
 
@@ -83,7 +84,7 @@ class SafeOutputTest {
         Path a = slide(in, "a.tif");
         byte[] before = Files.readAllBytes(a);
 
-        Hatch.main(new String[] {"-src", in.toString(), "-dest", in.toString(), "-o"});
+        assertEquals(1, Hatch.run(new String[] {"-src", in.toString(), "-dest", in.toString(), "-o"}));
 
         assertArrayEquals(before, Files.readAllBytes(a), "-src D -dest D -o must leave sources untouched");
         assertEquals(1, count(in, ".tif"), "nothing written into the source folder");
@@ -95,7 +96,7 @@ class SafeOutputTest {
         slide(in, "a.tif");
         Path out = in.resolve("out");
 
-        Hatch.main(new String[] {"-src", in.toString(), "-dest", out.toString(), "-o"});
+        assertEquals(1, Hatch.run(new String[] {"-src", in.toString(), "-dest", out.toString(), "-o"}));
 
         assertEquals(0, count(out, ".tif"), "nothing converted into a folder nested in the source");
     }
@@ -108,7 +109,8 @@ class SafeOutputTest {
         slide(in, "b.tif");
         Path out = dir.resolve("out");
 
-        Hatch.main(new String[] {"-src", in.toString(), "-dest", out.toString(), "-fp", "2"});
+        assertEquals(1, Hatch.run(new String[] {"-src", in.toString(), "-dest", out.toString(), "-fp", "2"}),
+            "skipped sources make the run fail");
 
         assertFalse(Files.exists(out.resolve("a.tif")), "colliding sources are refused, not raced");
         assertTrue(isCompletePyramid(out.resolve("b.tif")), "unrelated sources still convert");
@@ -123,7 +125,7 @@ class SafeOutputTest {
         slide(in.resolve("in"), "x.tif");
         byte[] before = Files.readAllBytes(x);
 
-        Hatch.main(new String[] {"-src", in.toString(), "-dest", root.toString(), "-o"});
+        assertEquals(1, Hatch.run(new String[] {"-src", in.toString(), "-dest", root.toString(), "-o"}));
 
         assertArrayEquals(before, Files.readAllBytes(x), "source root/in/x.tif must not be replaced");
         assertTrue(isCompletePyramid(root.resolve("x.tif")), "root/in/x.tif itself still converts");
@@ -150,11 +152,12 @@ class SafeOutputTest {
     }
 
     @Test
-    void failedConversionCreatesNoOutput(@TempDir Path dir) throws Exception {
-        Path src = slide(dir, "a.tif");
+    void failedConversionCreatesNoOutputAndExitsNonZero(@TempDir Path dir) throws Exception {
+        Path bad = dir.resolve("bad.tif");
+        Files.write(bad, new byte[] {1, 2, 3, 4, 5, 6, 7, 8});
         Path dest = dir.resolve("out.tif");
 
-        Hatch.main(new String[] {"-src", src.toString(), "-dest", dest.toString(), "-q", "1.5"});
+        assertEquals(1, Hatch.run(new String[] {"-src", bad.toString(), "-dest", dest.toString()}));
 
         assertFalse(Files.exists(dest), "no output for a failed conversion, so a re-run won't skip it");
         assertEquals(0, count(dir, ".part"), "no partial file left behind");

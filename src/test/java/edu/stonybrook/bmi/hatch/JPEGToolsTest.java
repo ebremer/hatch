@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import javax.imageio.ImageIO;
 import loci.common.RandomAccessInputStream;
+import loci.formats.FormatException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.Test;
@@ -66,6 +67,58 @@ class JPEGToolsTest {
         try (RandomAccessInputStream in = rais(dir, "small.bin", jpeg)) {
             assertThrows(IOException.class, () -> JPEGTools.FindFirstEOI(in, tiny),
                 "buffer overflow must surface as IOException, not AIOOBE");
+        }
+    }
+
+    @Test
+    void inspectReadsSamplingAndColourSpaceFromTheStream() throws Exception {
+        assertEquals(new JPEGTools.JpegInfo(3, 2, 2, false), JPEGTools.inspect(sampleJpeg()),
+            "ImageIO default: JFIF YCbCr 4:2:0");
+    }
+
+    @Test
+    void inspectReportsGrayscaleComponentCount() throws Exception {
+        BufferedImage gray = new BufferedImage(32, 32, BufferedImage.TYPE_BYTE_GRAY);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ImageIO.write(gray, "jpeg", baos);
+        assertEquals(1, JPEGTools.inspect(baos.toByteArray()).components());
+    }
+
+    @Test
+    void inspectRejectsProgressiveAndNonJpegData() throws Exception {
+        BufferedImage bi = new BufferedImage(32, 32, BufferedImage.TYPE_3BYTE_BGR);
+        javax.imageio.ImageWriter w = ImageIO.getImageWritersByFormatName("jpeg").next();
+        javax.imageio.ImageWriteParam p = w.getDefaultWriteParam();
+        p.setProgressiveMode(javax.imageio.ImageWriteParam.MODE_DEFAULT);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (javax.imageio.stream.MemoryCacheImageOutputStream out = new javax.imageio.stream.MemoryCacheImageOutputStream(baos)) {
+            w.setOutput(out);
+            w.write(null, new javax.imageio.IIOImage(bi, null, null), p);
+        } finally {
+            w.dispose();
+        }
+        assertThrows(FormatException.class, () -> JPEGTools.inspect(baos.toByteArray()), "progressive JPEG");
+        assertThrows(FormatException.class, () -> JPEGTools.inspect(new byte[] {1, 2, 3, 4, 5}), "not a JPEG");
+    }
+
+    @Test
+    void blankTilesMatchTheRequestedStructureAndColour() throws Exception {
+        JPEGTools.JpegInfo[] structures = {
+            new JPEGTools.JpegInfo(3, 2, 2, false),
+            new JPEGTools.JpegInfo(3, 2, 1, false),
+            new JPEGTools.JpegInfo(3, 1, 1, false),
+            new JPEGTools.JpegInfo(3, 1, 1, true),
+        };
+        for (JPEGTools.JpegInfo like : structures) {
+            byte[] jpeg = JPEGTools.blankTile(256, 240, 0xF2E6D8, like, 0.9f);
+            assertEquals(like, JPEGTools.inspect(jpeg), "structure of " + like);
+            BufferedImage bi = ImageIO.read(new java.io.ByteArrayInputStream(jpeg));
+            assertEquals(256, bi.getWidth());
+            assertEquals(240, bi.getHeight());
+            int rgb = bi.getRGB(100, 100);
+            assertEquals(0xF2, (rgb >> 16) & 0xff, 2, "red of " + like);
+            assertEquals(0xE6, (rgb >> 8) & 0xff, 2, "green of " + like);
+            assertEquals(0xD8, rgb & 0xff, 2, "blue of " + like);
         }
     }
 

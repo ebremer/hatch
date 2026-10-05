@@ -3,6 +3,7 @@ package edu.stonybrook.bmi.hatch;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferByte;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -11,12 +12,14 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import javax.imageio.ImageIO;
 import loci.formats.FormatException;
 import loci.formats.tiff.PhotoInterp;
+import loci.formats.tiff.TiffRational;
 
 /**
- * Generates small, self-contained tiled JPEG TIFF "slides" usable as Hatch input.
+ * Generates small, self-contained tiled TIFF "slides" usable as Hatch input.
  *
  * <p>The fixtures are written with {@link HatchWriter} (the same writer Hatch uses
  * for its output) so they land in exactly the dialect the {@code .tif} reading path
@@ -25,6 +28,38 @@ import loci.formats.tiff.PhotoInterp;
  * reads verbatim. Slides are synthesized at test time (no binary blobs committed).
  */
 final class TestFixtures {
+
+    /**
+     * One image of a fixture TIFF.
+     *
+     * @param compression     TIFF compression code: 7 (JPEG tiles) or 1 (uncompressed tiles)
+     * @param samples         samples per pixel: 3 (RGB) or 1 (grayscale)
+     * @param skipped         indices of tiles that are not stored (sparse file); never 0
+     * @param micronsPerPixel physical pixel size to record, or null for an uncalibrated image
+     */
+    record Image(int width, int height, int tileSize, int compression, int samples,
+                 Set<Integer> skipped, Double micronsPerPixel) {
+
+        static Image jpeg(int width, int height, int tileSize) {
+            return new Image(width, height, tileSize, 7, 3, Set.of(), null);
+        }
+
+        Image skipping(Integer... tiles) {
+            return new Image(width, height, tileSize, compression, samples, Set.of(tiles), micronsPerPixel);
+        }
+
+        Image calibrated(double micronsPerPixel) {
+            return new Image(width, height, tileSize, compression, samples, skipped, micronsPerPixel);
+        }
+
+        Image gray() {
+            return new Image(width, height, tileSize, compression, 1, skipped, micronsPerPixel);
+        }
+
+        Image uncompressed() {
+            return new Image(width, height, tileSize, 1, samples, skipped, micronsPerPixel);
+        }
+    }
 
     private TestFixtures() {
     }
@@ -76,40 +111,84 @@ final class TestFixtures {
     /** Writes a single-image, tiled, JPEG-compressed TIFF of the given logical size. */
     static void writeSlide(File dest, int width, int height, int tileSize)
             throws IOException, FormatException {
-        int nX = tileCount(width, tileSize);
-        int nY = tileCount(height, tileSize);
+        write(dest, Image.jpeg(width, height, tileSize));
+    }
+
+    /** Writes the images, in order, as the IFDs of one TIFF. */
+    static void write(File dest, Image... images) throws IOException, FormatException {
+        try (HatchWriter writer = new HatchWriter(dest.toString())) {
+            for (int i = 0; i < images.length; i++) {
+                if (i > 0) {
+                    writer.nextImage();
+                }
+                writeImage(writer, images[i], i == images.length - 1);
+            }
+        }
+    }
+
+    private static void writeImage(HatchWriter writer, Image im, boolean lastImage)
+            throws IOException, FormatException {
+        int nX = tileCount(im.width(), im.tileSize());
+        int nY = tileCount(im.height(), im.tileSize());
         int numtiles = nX * nY;
+        if (im.skipped().contains(0)) {
+            throw new IllegalArgumentException("tile 0 positions the IFD and cannot be skipped");
+        }
 
         loci.formats.tiff.IFD ifd = new loci.formats.tiff.IFD();
-        ifd.put(IFD.RESOLUTION_UNIT, 3);
-        ifd.put(IFD.TILE_WIDTH, tileSize);
-        ifd.put(IFD.TILE_LENGTH, tileSize);
-        ifd.put(IFD.IMAGE_WIDTH, (long) width);
-        ifd.put(IFD.IMAGE_LENGTH, (long) height);
+        ifd.put(IFD.TILE_WIDTH, im.tileSize());
+        ifd.put(IFD.TILE_LENGTH, im.tileSize());
+        ifd.put(IFD.IMAGE_WIDTH, (long) im.width());
+        ifd.put(IFD.IMAGE_LENGTH, (long) im.height());
         ifd.put(IFD.TILE_OFFSETS, new long[numtiles]);
         ifd.put(IFD.TILE_BYTE_COUNTS, new long[numtiles]);
-        ifd.put(IFD.COMPRESSION, 7);
-        ifd.put(IFD.BITS_PER_SAMPLE, new int[] {8, 8, 8});
-        ifd.put(IFD.SAMPLES_PER_PIXEL, 3);
+        ifd.put(IFD.COMPRESSION, im.compression());
+        ifd.put(IFD.SAMPLES_PER_PIXEL, im.samples());
         ifd.put(IFD.PLANAR_CONFIGURATION, 1);
-        ifd.put(IFD.SAMPLE_FORMAT, new int[] {1, 1, 1});
-        ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
-        ifd.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {1, 1});
+        if (im.samples() == 3) {
+            ifd.put(IFD.BITS_PER_SAMPLE, new int[] {8, 8, 8});
+            ifd.put(IFD.SAMPLE_FORMAT, new int[] {1, 1, 1});
+        } else {
+            ifd.put(IFD.BITS_PER_SAMPLE, new int[] {8});
+            ifd.put(IFD.SAMPLE_FORMAT, new int[] {1});
+        }
+        if (im.samples() == 1) {
+            ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.BLACK_IS_ZERO.getCode());
+        } else if (im.compression() == 7) {
+            // ImageIO writes JFIF YCbCr 4:2:0
+            ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
+            ifd.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {2, 2});
+        } else {
+            ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.RGB.getCode());
+        }
+        if (im.micronsPerPixel() != null) {
+            long pixelsPerCm = Math.round(10000 / im.micronsPerPixel());
+            ifd.put(IFD.RESOLUTION_UNIT, 3);
+            ifd.put(IFD.X_RESOLUTION, new TiffRational(pixelsPerCm, 1));
+            ifd.put(IFD.Y_RESOLUTION, new TiffRational(pixelsPerCm, 1));
+        }
 
-        try (HatchWriter writer = new HatchWriter(dest.toString())) {
-            for (int y = 0; y < nY; y++) {
-                for (int x = 0; x < nX; x++) {
-                    boolean last = (y == nY - 1) && (x == nX - 1);
-                    byte[] jpeg = jpegTile(x, y, tileSize);
-                    writer.writeIFDStrips(ifd, jpeg, last, x * tileSize, y * tileSize);
+        int lastStored = numtiles - 1;
+        while (im.skipped().contains(lastStored)) {
+            lastStored--;
+        }
+        for (int y = 0; y < nY; y++) {
+            for (int x = 0; x < nX; x++) {
+                int index = y * nX + x;
+                if (im.skipped().contains(index)) {
+                    continue;
                 }
+                BufferedImage tile = tileImage(x, y, im.tileSize(), im.samples());
+                byte[] data = im.compression() == 7 ? jpeg(tile) : rgbSamples(tile);
+                writer.writeIFDStrips(ifd, data, lastImage && index == lastStored, x * im.tileSize(), y * im.tileSize());
             }
         }
     }
 
     /** A full-size tile with distinct, non-uniform content so the JPEG has real structure. */
-    private static byte[] jpegTile(int tx, int ty, int tileSize) throws IOException {
-        BufferedImage bi = new BufferedImage(tileSize, tileSize, BufferedImage.TYPE_INT_RGB);
+    private static BufferedImage tileImage(int tx, int ty, int tileSize, int samples) {
+        BufferedImage bi = new BufferedImage(tileSize, tileSize,
+            samples == 3 ? BufferedImage.TYPE_3BYTE_BGR : BufferedImage.TYPE_BYTE_GRAY);
         Graphics2D g = bi.createGraphics();
         g.setColor(new Color((tx * 53 + 30) % 256, (ty * 97 + 60) % 256, 128));
         g.fillRect(0, 0, tileSize, tileSize);
@@ -119,6 +198,23 @@ final class TestFixtures {
             g.drawLine(i, 0, i, tileSize);
         }
         g.dispose();
+        return bi;
+    }
+
+    /** Uncompressed tile samples: TYPE_3BYTE_BGR stores B,G,R but TIFF wants R,G,B. */
+    private static byte[] rgbSamples(BufferedImage bi) {
+        byte[] p = ((DataBufferByte) bi.getRaster().getDataBuffer()).getData().clone();
+        if (bi.getType() == BufferedImage.TYPE_3BYTE_BGR) {
+            for (int i = 0; i < p.length; i += 3) {
+                byte t = p[i];
+                p[i] = p[i + 2];
+                p[i + 2] = t;
+            }
+        }
+        return p;
+    }
+
+    private static byte[] jpeg(BufferedImage bi) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(bi, "jpeg", baos);
         return baos.toByteArray();

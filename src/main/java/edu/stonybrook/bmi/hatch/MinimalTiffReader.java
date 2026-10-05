@@ -276,49 +276,46 @@ public class MinimalTiffReader extends SubResolutionFormatReader {
   }
   
   @Override
-  public byte[] getRawBytes(IFD ifd, int no, int row, int col) {
+  public byte[] getRawBytes(IFD ifd, int no, int row, int col) throws FormatException, IOException {
     if (tiffParser == null) {
       initTiffParser();
     }
-    byte[] x = null;
-    try {
-        x = tiffParser.getRawTile(ifd, x, row, col);
-    } catch (FormatException | IOException ex) {
-        throw new RuntimeException("Failed to read raw tile [" + row + "," + col + "]", ex);
-    }
-    return x;
+    return tiffParser.getRawTile(ifd, row, col);
   }
-  
+
   @Override
-  public byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col) {
-    if (tiffParser == null) {
-      initTiffParser();
-    }
-    IFD firstIFD = ifds.get(0);
+  public byte[] getRawBytes(byte[] rawbuffer, int no, int row, int col) throws FormatException, IOException {
     lastPlane = no;
-    IFD ifd;
-    if (seriesToIFD) {
-      ifd = ifds.get(getSeries());
-    } else {
-      ifd = ifds.get(no);
+    return getRawBytes(getRawIFD(no), no, row, col);
+  }
+
+  /** The IFD that stores plane {@code no} of the current series. */
+  protected IFD getRawIFD(int no) {
+    return ifds.get(seriesToIFD ? getSeries() : no);
+  }
+
+  @Override
+  public RawTileLayout getRawTileLayout() throws FormatException {
+    IFD ifd = getRawIFD(0);
+    TiffCompression compression = ifd.getCompression();
+    if (compression != TiffCompression.JPEG) {
+      throw new FormatException("Tiles are " + compression.getCodecName() + " (TIFF compression " +
+        compression.getCode() + "); only JPEG (compression 7) tiles can be copied");
     }
-    try {
-        if ((firstIFD.getCompression() == TiffCompression.JPEG_2000 || firstIFD.getCompression() == TiffCompression.JPEG_2000_LOSSY) && resolutionLevels != null) {
-            if (getCoreIndex() > 0) {
-                ifd = subResolutionIFDs.get(no).get(getCoreIndex() - 1);
-            }
-            setResolutionLevel(ifd);
-        }
-    } catch (FormatException ex) {
-        java.util.logging.Logger.getLogger(MinimalTiffReader.class.getName()).log(Level.SEVERE, null, ex);
+    if (!ifd.isTiled()) {
+      throw new FormatException("Image is stored in strips, not tiles");
     }
-    byte[] x = null;
-    try {
-        x = tiffParser.getRawTile(ifd, x, row, col);
-    } catch (FormatException | IOException ex) {
-        throw new RuntimeException("Failed to read raw tile [" + row + "," + col + "]", ex);
+    if (ifd.getPlanarConfiguration() != 1) {
+      throw new FormatException("Planar configuration " + ifd.getPlanarConfiguration() +
+        " is not supported; samples must be interleaved");
     }
-    return x;
+    if (ifd.getSamplesPerPixel() != 3 || ifd.getBitsPerSample()[0] != 8) {
+      throw new FormatException(ifd.getSamplesPerPixel() + " x " + ifd.getBitsPerSample()[0] +
+        "-bit samples per pixel; only 8-bit RGB images are supported");
+    }
+    return new RawTileLayout((int) ifd.getImageWidth(), (int) ifd.getImageLength(),
+      (int) ifd.getTileWidth(), (int) ifd.getTileLength(),
+      (int) ifd.getTilesPerRow(), (int) ifd.getTilesPerColumn(), RawTileLayout.WHITE);
   }
 
   /**
