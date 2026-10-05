@@ -6,6 +6,11 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
 import javax.imageio.ImageIO;
 import loci.formats.FormatException;
 import loci.formats.tiff.PhotoInterp;
@@ -30,6 +35,33 @@ final class TestFixtures {
         int ss = (int) Math.ceil(Math.log(size) / Math.log(2));
         int tiless = (int) Math.ceil(Math.log(tileSize) / Math.log(2));
         return ss - tiless + 2;
+    }
+
+    /**
+     * Offsets of every IFD in a little-endian BigTIFF, read straight from the bytes (independent
+     * of the project's parser). Fails if the chain points outside the file or does not end in 0.
+     */
+    static List<Long> ifdChain(File tiff) throws IOException {
+        byte[] bytes = Files.readAllBytes(tiff.toPath());
+        ByteBuffer b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+        if (b.getShort(0) != 0x4949 || b.getShort(2) != 43) {
+            throw new IOException("not a little-endian BigTIFF: " + tiff);
+        }
+        List<Long> offsets = new ArrayList<>();
+        long off = b.getLong(8);
+        while (off != 0) {
+            if (off < 16 || off + 8 > bytes.length || offsets.size() > 64) {
+                throw new IOException("IFD offset " + off + " is outside the " + bytes.length + "-byte file");
+            }
+            offsets.add(off);
+            long entries = b.getLong((int) off);
+            long next = off + 8 + entries * 20;
+            if (next + 8 > bytes.length) {
+                throw new IOException("IFD at " + off + " runs past the end of the file");
+            }
+            off = b.getLong((int) next);
+        }
+        return offsets;
     }
 
     /** Number of tiles needed to cover {@code dim} pixels at {@code tileSize} (ceiling). */

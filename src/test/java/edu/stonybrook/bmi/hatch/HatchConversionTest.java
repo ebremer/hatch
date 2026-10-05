@@ -8,6 +8,7 @@ import javax.imageio.ImageIO;
 import loci.common.RandomAccessInputStream;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,13 @@ class HatchConversionTest {
         convertAndAssertPyramid(dir, 256, 200);
     }
 
+    @Test
+    void convertsImageSmallerThanHalfATile(@TempDir Path dir) throws Exception {
+        // depth == 1: no reduced levels, so the base IFD itself must terminate the chain
+        // (regression: its next-IFD offset used to point at end-of-file)
+        convertAndAssertPyramid(dir, 100, 100);
+    }
+
     private void convertAndAssertPyramid(Path dir, int width, int height) throws Exception {
         File src = dir.resolve("slide_" + width + "x" + height + ".tif").toFile();
         File dest = dir.resolve("out_" + width + "x" + height + ".tif").toFile();
@@ -54,8 +62,11 @@ class HatchConversionTest {
             x.Execute();
         }
         assertTrue(dest.exists() && dest.length() > 0, "output pyramid was written");
+        assertFalse(new File(dest.getPath() + ".part").exists(), "temporary .part file was moved into place");
 
         int expectedDepth = TestFixtures.expectedDepth(width, height, TILE);
+        assertEquals(expectedDepth, TestFixtures.ifdChain(dest).size(),
+            "IFD chain stays inside the file, ends in 0, and has one IFD per level");
 
         // ---- structure of the output pyramid, via the project's own parser ----
         byte[] outBaseTile;

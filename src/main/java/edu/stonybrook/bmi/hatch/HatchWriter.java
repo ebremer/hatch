@@ -1,8 +1,6 @@
 package edu.stonybrook.bmi.hatch;
 
 import java.io.IOException;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import loci.common.RandomAccessOutputStream;
 import loci.formats.FormatException;
 import loci.formats.codec.CodecOptions;
@@ -18,24 +16,32 @@ public class HatchWriter implements AutoCloseable {
 
     public HatchWriter(String file) throws IOException {
         ros = new RandomAccessOutputStream(file);
-        writer = new HatchSaver(ros, file);
-        writer.setBigTiff(true);
-        writer.setLittleEndian(true);
-        writer.setWritingSequentially(true);
-        writer.setCodecOptions(CodecOptions.getDefaultOptions());
-        writer.writeHeader();
+        try {
+            writer = new HatchSaver(ros, file);
+            writer.setBigTiff(true);
+            writer.setLittleEndian(true);
+            writer.setWritingSequentially(true);
+            writer.setCodecOptions(CodecOptions.getDefaultOptions());
+            writer.writeHeader();
+        } catch (IOException | RuntimeException ex) {
+            try {
+                ros.close();
+            } catch (IOException e) {
+                ex.addSuppressed(e);
+            }
+            throw ex;
+        }
     }
 
     public void nextImage() throws IOException {
         ros.seek(ros.length());
     }
 
+    /** Flushes and closes the file; failures propagate so callers never commit an incomplete file. */
     @Override
-    public void close() {
+    public void close() throws IOException {
         try (ros; writer) {
             ros.flush();
-        } catch (IOException ex) {
-            Logger.getLogger(HatchWriter.class.getName()).log(Level.SEVERE, "Error closing writer", ex);
         }
     }
 

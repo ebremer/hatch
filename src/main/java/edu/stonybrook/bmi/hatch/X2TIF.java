@@ -1,8 +1,11 @@
 package edu.stonybrook.bmi.hatch;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import loci.common.services.DependencyException;
@@ -33,6 +36,7 @@ import java.util.logging.LogManager;
 public class X2TIF implements AutoCloseable {
     private FormatReader reader;
     private final String inputFile;
+    private final String dest;
     private int tileSizeX;
     private int tileSizeY;
     private int height;
@@ -63,9 +67,10 @@ public class X2TIF implements AutoCloseable {
          LOGGER = Logger.getLogger(X2TIF.class.getName());
      }
     
-    public X2TIF(HatchParameters params, String src, String dest, Integer series) {
+    public X2TIF(HatchParameters params, String src, String dest, Integer series) throws FormatException, IOException {
         time = new StopWatch();
         inputFile = src;
+        this.dest = dest;
         this.params = params;
         if (params.verbose) {
             LOGGER.log(Level.INFO,"initializing...");
@@ -99,14 +104,7 @@ public class X2TIF implements AutoCloseable {
                 maximage = series;
             }
             if ((series!=null)&&((series<0)||(series>=reader.getSeriesCount()))) {
-                LOGGER.log(Level.SEVERE, "Series does not exist : {0}: {1}", new Object[]{src, series});
-                cleanupAfterInitFailure();
                 throw new IllegalArgumentException("Series " + series + " does not exist in " + src);
-            }
-            try {
-               writer = new HatchWriter(dest);
-            } catch (IOException ex) {
-                LOGGER.log(Level.SEVERE, "FILE PROCESSOR ERROR: {0} {1} {2}", new Object[]{params.src, params.dest, ex.toString()});
             }
             reader.setSeries(maximage);
             tileSizeX = reader.getOptimalTileWidth();
@@ -124,24 +122,12 @@ public class X2TIF implements AutoCloseable {
             }
             //String xml = service.getOMEXML(omexml);
             //Systsm.out.println(xml);
-            try {
-                if (xcompression==null) {                
-                    if (params.verbose) {
-                        LOGGER.log(Level.INFO,"NULL compression specified...trying JPEG...no promises...");
-                    }
-                } else if (("JPEG-2000".equals(xcompression))&&params.jp2) {
-                    
-                } else if (!"JPEG".equals(xcompression)) {
-                    throw new Error("Hatch can only convert images that have JPEG compression.");   
+            if (xcompression==null) {
+                if (params.verbose) {
+                    LOGGER.log(Level.INFO,"NULL compression specified...trying JPEG...no promises...");
                 }
-            } catch (Error e){
-                LOGGER.log(Level.SEVERE, "{0} : {1}  {2}", new Object[]{e.getLocalizedMessage(), src, dest});
-                cleanupAfterInitFailure();
-                File partial = new File(dest);
-                if (partial.exists()) {
-                    partial.delete();
-                }
-                throw new IllegalArgumentException(e.getLocalizedMessage() + " (" + src + ")");
+            } else if (!"JPEG".equals(xcompression) && !("JPEG-2000".equals(xcompression) && params.jp2)) {
+                throw new IllegalArgumentException("Hatch can only convert images that have JPEG compression. (" + src + ")");
             }
             int size = Math.max(width, height);
             int ss = (int) Math.ceil(Math.log(size)/Math.log(2));
@@ -167,29 +153,25 @@ public class X2TIF implements AutoCloseable {
             meta.setPixelsSizeZ(new PositiveInteger(1), 0);
             meta.setPixelsSizeC(new PositiveInteger(3), 0);
             meta.setPixelsSizeT(new PositiveInteger(1), 0);
-        } catch (DependencyException ex) {
-            LOGGER.log(Level.SEVERE, "DependencyException : {0}  {1}", new Object[]{src, dest});
-        } catch (ServiceException ex) {
-            LOGGER.log(Level.SEVERE, "ServiceException : {0}  {1}", new Object[]{src, dest});
-        } catch (FormatException ex) {
-            LOGGER.log(Level.SEVERE, "FormatException : {0}  {1}", new Object[]{src, dest});
-        } catch (IOException ex) {
-            LOGGER.log(Level.SEVERE, "IOException : {0}  {1}", new Object[]{src, dest});
+            xmp = new XMP();
+            FindMeta(xmp);
+        } catch (DependencyException | ServiceException ex) {
+            closeReaderAfterFailure(ex);
+            throw new FormatException("Unable to create OME-XML metadata: " + ex.getMessage(), ex);
+        } catch (FormatException | IOException | RuntimeException | Error ex) {
+            // a constructor that throws is never close()d by try-with-resources
+            closeReaderAfterFailure(ex);
+            throw ex;
         }
-        xmp = new XMP();   
-        FindMeta(xmp);
     }
 
-    private void cleanupAfterInitFailure() {
-        try {
-            if (reader != null) {
+    private void closeReaderAfterFailure(Throwable failure) {
+        if (reader != null) {
+            try {
                 reader.close();
+            } catch (IOException ex) {
+                failure.addSuppressed(ex);
             }
-        } catch (IOException ex) {
-            LOGGER.log(Level.WARNING, "Error closing reader after init failure: {0}", ex.toString());
-        }
-        if (writer != null) {
-            writer.close();
         }
     }
 
@@ -305,7 +287,7 @@ public class X2TIF implements AutoCloseable {
         return shortArray;
     }
     
-    public void readWriteTiles() throws FormatException, IOException {
+    private void readWriteTiles() throws FormatException, IOException {
         if (params.verbose) {
             LOGGER.log(Level.INFO,"transferring image data...");
         }
@@ -410,7 +392,9 @@ public class X2TIF implements AutoCloseable {
                 };
                 //byte[] raw = reader.getRawBytes(rawbuffer, 0, y, x);
 
-                writer.writeIFDStrips(ifd, raw, false, x*tileSizeX, y*tileSizeY);
+                // with no reduced levels to follow, the last base tile must terminate the IFD chain
+                boolean last = (depth <= 1) && (x == nXTiles-1) && (y == nYTiles-1);
+                writer.writeIFDStrips(ifd, raw, last, x*tileSizeX, y*tileSizeY);
                 switch (compression) {
                     case 0 -> pyramid.put(raw, x, y);
                     default -> throw new Error("Unknown Compression!");
@@ -464,16 +448,58 @@ public class X2TIF implements AutoCloseable {
         }
     }
     
+    /**
+     * Writes the pyramid to a sibling ".part" file and moves it over the destination only once
+     * it is complete, so a failure never leaves a partial file and never destroys an existing one.
+     */
     public void Execute() throws FormatException, IOException {
-        readWriteTiles();
+        Path target = Path.of(dest).toAbsolutePath();
+        Files.createDirectories(target.getParent());
+        Path part = target.resolveSibling(target.getFileName() + ".part");
+        Files.deleteIfExists(part);
+        try {
+            writer = new HatchWriter(part.toString());
+            readWriteTiles();
+            writer.close();
+            writer = null;
+            moveIntoPlace(part, target);
+        } catch (FormatException | IOException | RuntimeException | Error ex) {
+            if (writer != null) {
+                try {
+                    writer.close();
+                } catch (IOException e) {
+                    ex.addSuppressed(e);
+                }
+                writer = null;
+            }
+            try {
+                Files.deleteIfExists(part);
+            } catch (IOException e) {
+                ex.addSuppressed(e);
+            }
+            throw ex;
+        }
         if (params.verbose) {
             time.Cumulative();
         }
     }
 
+    private static void moveIntoPlace(Path part, Path target) throws IOException {
+        try {
+            Files.move(part, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ex) {
+            Files.move(part, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
     @Override
     public void close() throws Exception {
-        reader.close();
-        writer.close();
+        try {
+            reader.close();
+        } finally {
+            if (writer != null) {
+                writer.close();
+            }
+        }
     }
 }
