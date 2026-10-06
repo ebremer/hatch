@@ -9,7 +9,18 @@
             <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
             <maven.compiler.release>21</maven.compiler.release>
             <ver.bioformats>8.3.0</ver.bioformats>
+            <ver.slf4j>2.0.12</ver.slf4j>
 	</properties>
+	<dependencyManagement>
+            <dependencies>
+                <!-- Bio-Formats brings an older slf4j-api; keep it in step with slf4j-simple -->
+                <dependency>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                    <version>${ver.slf4j}</version>
+                </dependency>
+            </dependencies>
+	</dependencyManagement>
 	<dependencies>
             <dependency>
 		<groupId>ome</groupId>
@@ -29,20 +40,9 @@
                 <version>2.0</version>
             </dependency>
             <dependency>
-                <groupId>org.apache.jena</groupId>
-                <artifactId>apache-jena-libs</artifactId>
-                <version>5.5.0</version>
-                <type>pom</type>
-            </dependency>
-            <dependency>
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-simple</artifactId>
-                <version>2.0.12</version>
-            </dependency>
-            <dependency>
-                <groupId>me.tongfei</groupId>
-                <artifactId>progressbar</artifactId>
-                <version>0.10.1</version>
+                <version>${ver.slf4j}</version>
             </dependency>
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
@@ -56,6 +56,17 @@
                 <resource>
                     <filtering>false</filtering>
                     <directory>src/main/resources</directory>
+                    <excludes>
+                        <exclude>hatch.properties</exclude>
+                    </excludes>
+                </resource>
+                <resource>
+                    <!-- carries the project version into Hatch.software -->
+                    <filtering>true</filtering>
+                    <directory>src/main/resources</directory>
+                    <includes>
+                        <include>hatch.properties</include>
+                    </includes>
                 </resource>
                 <resource>
                     <filtering>false</filtering>
@@ -89,10 +100,6 @@
 		<id>ome</id>
 		<name>OME Artifactory</name>
 		<url>https://artifacts.openmicroscopy.org/artifactory/maven/</url>
-            </repository>
-            <repository>
-                <id>halcyon</id>
-                <url>https://cursus.bmi.stonybrookmedicine.edu/releases</url>
             </repository>
 	</repositories>
         <profiles>
@@ -165,17 +172,6 @@
                 <build>
                     <plugins>
                         <plugin>
-                            <groupId>org.apache.maven.plugins</groupId>
-                            <artifactId>maven-compiler-plugin</artifactId>
-                            <version>3.14.0</version>
-                            <configuration>
-                                <compilerArgs>
-                                    <arg>--add-reads</arg>
-                                    <arg>edu.stonybrook.bmi.hatch=ALL-UNNAMED</arg>
-                                </compilerArgs>
-                            </configuration>
-                        </plugin>
-                        <plugin>
                             <groupId>org.graalvm.buildtools</groupId>
                             <artifactId>native-maven-plugin</artifactId>
                             <version>0.11.0</version>
@@ -192,18 +188,17 @@
                             <configuration>
                                 <imageName>hatch</imageName>
                                 <mainClass>edu.stonybrook.bmi.hatch.Hatch</mainClass>
-                                <debug>true</debug>
                                 <skipNativeTests>true</skipNativeTests>
-                                <verbose>true</verbose>
                                 <buildArgs>
                                     <buildArg>--no-fallback</buildArg>
                                     <buildArg>-H:ConfigurationFileDirectories=config</buildArg>
                                     <buildArg>--enable-url-protocols=https</buildArg>
                                     <buildArg>-H:+AddAllCharsets</buildArg>
                                     <buildArg>--gc=G1</buildArg>
-                                    <buildArg>-march=native</buildArg>
+                                    <!-- runs on any x86-64 CPU; -march=native would crash (SIGILL) on older ones -->
+                                    <buildArg>-march=compatibility</buildArg>
                                     <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
-                                    <buildArg>-H:IncludeResources="logging.properties"</buildArg>
+                                    <buildArg>-H:IncludeResources=logging\.properties|hatch\.properties</buildArg>
                                 </buildArgs>
                             </configuration>
                         </plugin>

@@ -1,26 +1,23 @@
 package edu.stonybrook.bmi.hatch;
 
-import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.text.DecimalFormat;
+import java.util.Base64;
 import java.util.UUID;
-import static org.apache.commons.codec.binary.Base64.encodeBase64;
-import org.apache.jena.datatypes.xsd.XSDDatatype;
-import org.apache.jena.rdf.model.Literal;
-import org.apache.jena.rdf.model.Model;
-import org.apache.jena.rdf.model.ModelFactory;
-import org.apache.jena.rdf.model.Resource;
-import org.apache.jena.riot.Lang;
-import org.apache.jena.riot.RDFWriterBuilder;
-import org.apache.jena.vocabulary.RDF;
-import org.apache.jena.vocabulary.XSD;
 
 /**
+ * The XMP packet hatch embeds in the full-resolution image (TIFF tag 700).
+ *
+ * <p>The RDF/XML is written directly, in the layout Apache Jena's RDF/XML writer used to
+ * produce, so readers of earlier hatch output keep working: properties in the
+ * {@code http://ns.adobe.com/DICOM/} namespace, and PixelSpacing as an RDF list of
+ * (row spacing, column spacing) in mm.
  *
  * @author erich
  */
 public class XMP {
+    private static final String RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+
     private BigDecimal magnification = null;
     private BigDecimal ppsx = null;
     private BigDecimal ppsy = null;
@@ -71,57 +68,85 @@ public class XMP {
         this.ppsy = ppsy;
     }
 
+    /** The RDF/XML document. */
     public byte[] getXMP() {
-        Model m = ModelFactory.createDefaultModel();
-        Resource root = m.createResource(uuid);
-        if (magnification != null) {
-            DecimalFormat f = new DecimalFormat("#.##############################");
-            f.setDecimalSeparatorAlwaysShown(false);
-            root.addProperty(m.createProperty("http://ns.adobe.com/DICOM/ObjectiveLensPower"), f.format(magnification));
-        }
-        if (manufacturer != null) {
-            root.addProperty(m.createProperty("http://ns.adobe.com/DICOM/Manufacturer"), manufacturer);
-        }
-        if (manufacturerdevicename != null) {
-            root.addProperty(m.createProperty("http://ns.adobe.com/DICOM/ManufacturerModelName"), manufacturerdevicename);
-        }
-        if (iccprofile != null) {
-            Literal lit = m.createTypedLiteral(encodeBase64(iccprofile), XSDDatatype.XSDbase64Binary);
-            root.addProperty(m.createProperty("http://ns.adobe.com/DICOM/ICCProfile"), lit);
-        }
-        if (ImageComments != null) {
-            root.addProperty(m.createProperty("http://ns.adobe.com/DICOM/ImageComments"), ImageComments);
+        StringBuilder x = new StringBuilder();
+        x.append("<rdf:RDF\n")
+         .append("    xmlns:rdf=\"").append(RDF).append("\"\n")
+         .append("    xmlns:DICOM=\"http://ns.adobe.com/DICOM/\"\n")
+         .append("    xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"\n")
+         .append("    xmlns:xmpMM=\"http://ns.adobe.com/xap/1.0/mm/\"\n")
+         .append("    xmlns:xsd=\"http://www.w3.org/2001/XMLSchema#\">\n")
+         .append("  <rdf:Description rdf:about=\"").append(escape(uuid)).append("\">\n");
+        if ((ppsx != null) && (ppsy != null)) {
+            x.append("    <DICOM:PixelSpacing rdf:parseType=\"Resource\">\n")
+             .append("      <rdf:rest rdf:parseType=\"Resource\">\n")
+             .append("        <rdf:rest rdf:resource=\"").append(RDF).append("nil\"/>\n")
+             .append("        <rdf:first>").append(number(ppsx)).append("</rdf:first>\n")
+             .append("      </rdf:rest>\n")
+             .append("      <rdf:first>").append(number(ppsy)).append("</rdf:first>\n")
+             .append("    </DICOM:PixelSpacing>\n");
         }
         if (exposuretime != null) {
-            DecimalFormat f = new DecimalFormat("#.##############################");
-            f.setDecimalSeparatorAlwaysShown(false);
-            root.addProperty(m.createProperty("http://ns.adobe.com/DICOM/ExposureTime"), m.createLiteral(f.format(exposuretime)));
+            property(x, "ExposureTime", number(exposuretime));
         }
-        if ((ppsx != null) && (ppsy != null)) {
-            DecimalFormat f = new DecimalFormat("#.##############################");
-            f.setDecimalSeparatorAlwaysShown(false);
-            root.addProperty(m.createProperty("http://ns.adobe.com/DICOM/PixelSpacing"), m.createList(m.createLiteral(f.format(ppsy)), m.createLiteral(f.format(ppsx))));
+        if (ImageComments != null) {
+            property(x, "ImageComments", escape(ImageComments));
         }
-        m.setNsPrefix("DICOM", "http://ns.adobe.com/DICOM/");
-        m.setNsPrefix("rdf", RDF.uri);
-        m.setNsPrefix("xmpMM", "http://ns.adobe.com/xap/1.0/mm/");
-        m.setNsPrefix("xmp", "http://ns.adobe.com/xap/1.0/");
-        m.setNsPrefix("xsd", XSD.NS);
-        ByteArrayOutputStream os = new ByteArrayOutputStream();
-        RDFWriterBuilder builder = RDFWriterBuilder.create();
-        builder
-            .source(m)
-            .lang(Lang.RDFXML)
-            .base(uuid)
-            .output(os);
-        builder.build();
-        return os.toByteArray();
+        if (iccprofile != null) {
+            x.append("    <DICOM:ICCProfile rdf:datatype=\"http://www.w3.org/2001/XMLSchema#base64Binary\">")
+             .append(Base64.getEncoder().encodeToString(iccprofile))
+             .append("</DICOM:ICCProfile>\n");
+        }
+        if (manufacturerdevicename != null) {
+            property(x, "ManufacturerModelName", escape(manufacturerdevicename));
+        }
+        if (manufacturer != null) {
+            property(x, "Manufacturer", escape(manufacturer));
+        }
+        if (magnification != null) {
+            property(x, "ObjectiveLensPower", number(magnification));
+        }
+        x.append("  </rdf:Description>\n")
+         .append("</rdf:RDF>\n");
+        return x.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static void property(StringBuilder x, String name, String value) {
+        x.append("    <DICOM:").append(name).append('>').append(value).append("</DICOM:").append(name).append(">\n");
+    }
+
+    /** Plain decimal notation, independent of the default locale (0.00025, not 2.5E-4 or 0,00025). */
+    private static String number(BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString();
+    }
+
+    /** Escapes text for XML element content and attribute values. */
+    static String escape(String s) {
+        StringBuilder b = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '&' -> b.append("&amp;");
+                case '<' -> b.append("&lt;");
+                case '>' -> b.append("&gt;");
+                case '"' -> b.append("&quot;");
+                default -> {
+                    // XML 1.0 forbids most control characters, even escaped
+                    if (c >= 0x20 || c == '\t' || c == '\n' || c == '\r') {
+                        b.append(c);
+                    }
+                }
+            }
+        }
+        return b.toString();
     }
 
     public String getXMPString() {
         String packet = new String(getXMP(), StandardCharsets.UTF_8);
-        packet = "<?xpacket begin='﻿' id='W5M0MpCehiHzreSzNTczkc9d'?>\n<x:xmpmeta xmlns:x='adobe:ns:meta/' x:xmptk='" + Hatch.software + "'>\n" + packet;
-        packet = packet + "</x:xmpmeta>\n" + (new String(new char[2424]).replace('\0', ' ')) + "\n<?xpacket end='w'?>";
+        packet = "<?xpacket begin='﻿' id='W5M0MpCehiHzreSzNTczkc9d'?>\n<x:xmpmeta xmlns:x='adobe:ns:meta/' x:xmptk='" + escape(Hatch.software) + "'>\n" + packet;
+        // padding lets the packet be edited in place
+        packet = packet + "</x:xmpmeta>\n" + " ".repeat(2424) + "\n<?xpacket end='w'?>";
         return packet;
     }
 }

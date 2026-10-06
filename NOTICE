@@ -1,0 +1,30 @@
+hatch
+Licensed under the GNU General Public License, version 2 (see LICENSE).
+
+This product includes software from the OME Bio-Formats project
+(https://github.com/ome/bioformats):
+  Copyright (C) 2005 - 2017 Open Microscopy Environment:
+    - Board of Regents of the University of Wisconsin-Madison
+    - Glencoe Software, Inc.
+    - University of Dundee
+  Licensed under the GNU General Public License, version 2 or later.
+
+Modified file
+
+  src/main/java/edu/stonybrook/bmi/hatch/CellSensReader.java
+    Derived from loci.formats.in.CellSensReader. Changes for hatch:
+    - hands out the stored JPEG tiles of an ETS file without decoding them
+      (RawTileSource.getRawTile / getRawTileLayout), reading each tile by its
+      chunk-table byte count through one open file per ETS file;
+    - looks tiles up through a hash map instead of a list search;
+    - keeps an explicit core index -> pyramid map, used for both metadata and
+      tile reads;
+    - reports a missing ETS folder, and series not stored in an ETS file, as
+      errors; closes itself when initialization fails;
+    - with a non-zero TILE_ORIGIN, copies the stored tile grid as it is and
+      widens the image to it, since tiles cannot be shifted without
+      re-encoding (see getRawTileLayout).
+
+Bio-Formats (formats-api, formats-bsd, formats-gpl 8.3.0) is otherwise used
+unmodified, as a library. HatchTiffReader and HatchSVSReader subclass its
+TIFF and SVS readers.

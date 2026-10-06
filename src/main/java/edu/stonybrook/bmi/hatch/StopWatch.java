@@ -11,9 +11,8 @@ public final class StopWatch {
         start = System.nanoTime();
     }
 
-    public void Cumulative() {
-        double diff = System.nanoTime() - start;
-        diff = diff / 1000000000L;
-        System.out.println("Cumulative : " + diff + " seconds");
+    /** Seconds since the watch was created, to two decimals. */
+    public String seconds() {
+        return String.format(java.util.Locale.ROOT, "%.2f", (System.nanoTime() - start) / 1e9);
     }
 }

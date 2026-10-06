@@ -17,19 +17,17 @@ import loci.formats.FormatException;
 import loci.formats.FormatTools;
 import loci.formats.meta.IMetadata;
 import loci.formats.meta.MetadataRetrieve;
-import loci.formats.ome.OMEPyramidStore;
 import loci.formats.services.OMEXMLService;
 import loci.formats.tiff.IFD;
 import loci.formats.tiff.PhotoInterp;
 import loci.formats.tiff.TiffRational;
 import ome.units.UNITS;
 import ome.units.quantity.Length;
-import ome.xml.model.enums.DimensionOrder;
-import ome.xml.model.enums.PixelType;
-import ome.xml.model.primitives.PositiveInteger;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.Map;
+import java.util.function.Supplier;
+import ome.units.quantity.Time;
 
 /**
  *
@@ -52,10 +50,10 @@ public class X2TIF implements AutoCloseable {
     private TiffRational py;
     private final HatchParameters params;
     private TiledTiffWriter writer;
-    private IMetadata meta;
     private RawTileLayout layout;
     private static final Logger LOGGER = Logger.getLogger(X2TIF.class.getName());
     private XMP xmp = null;
+    private static final String APERIO = "Aperio";
 
     public X2TIF(HatchParameters params, String src, String dest, Integer series) throws FormatException, IOException {
         time = new StopWatch();
@@ -69,17 +67,16 @@ public class X2TIF implements AutoCloseable {
             ServiceFactory factory = new ServiceFactory();
             OMEXMLService service = factory.getInstance(OMEXMLService.class);
             IMetadata omexml = service.createOMEXMLMetadata();
-            String end = inputFile.length() >= 4 ? inputFile.substring(inputFile.length()-4).toLowerCase() : "";
-            switch (end) {
-                case ".tif" -> reader = new HatchTiffReader();
-                case ".svs" -> reader = new HatchSVSReader();
-                case ".vsi" -> reader = new CellSensReader();
-                default -> throw new IllegalArgumentException("Unsupported input file type (expected .tif/.svs/.vsi): " + inputFile);
+            switch (Hatch.extension(inputFile)) {
+                case "tif", "tiff" -> reader = new HatchTiffReader();
+                case "svs" -> reader = new HatchSVSReader();
+                case "vsi" -> reader = new CellSensReader();
+                default -> throw new IllegalArgumentException("Unsupported input file type (expected .tif/.tiff/.svs/.vsi): " + inputFile);
             }
             reader.setMetadataStore(omexml);
             reader.setId(inputFile);
             if (series==null) {
-                maximage = MaxImage(reader);
+                maximage = maxImage(reader);
             } else {
                 maximage = series;
             }
@@ -113,7 +110,8 @@ public class X2TIF implements AutoCloseable {
             MetadataRetrieve retrieve = (MetadataRetrieve) reader.getMetadataStore();
             ppx = retrieve.getPixelsPhysicalSizeX(maximage);
             ppy = retrieve.getPixelsPhysicalSizeY(maximage);
-            SetPPS();
+            px = pixelsPerCm(ppx);
+            py = pixelsPerCm(ppy);
             if (params.verbose) {
                 LOGGER.log(Level.INFO, "Image Size   : {0}x{1}", new Object[]{width, height});
                 LOGGER.log(Level.INFO, "Tile size    : {0}x{1}", new Object[]{tileSizeX, tileSizeY});
@@ -122,24 +120,8 @@ public class X2TIF implements AutoCloseable {
             if (params.verbose) {
                 LOGGER.log(Level.INFO, "# of scales to be generated : {0}", depth);
             }
-            meta = service.createOMEXMLMetadata();
-            meta.setImageID("Image:0", 0);
-            meta.setPixelsID("Pixels:0", 0);
-            meta.setChannelID("Channel:0", 0, 0);
-            meta.setChannelSamplesPerPixel(new PositiveInteger(3), 0, 0);
-            meta.setPixelsBigEndian(!reader.isLittleEndian(), 0);
-            meta.setPixelsInterleaved(reader.isInterleaved(), 0);
-            meta.setPixelsSizeX(new PositiveInteger(tileSizeX), 0);
-            meta.setPixelsSizeY(new PositiveInteger(tileSizeY), 0);
-            meta.setPixelsDimensionOrder(DimensionOrder.XYZCT, 0);
-            meta.setPixelsType(PixelType.UINT8, 0);
-            meta.setPixelsSizeX(new PositiveInteger(tileSizeX), 0);
-            meta.setPixelsSizeY(new PositiveInteger(tileSizeY), 0);
-            meta.setPixelsSizeZ(new PositiveInteger(1), 0);
-            meta.setPixelsSizeC(new PositiveInteger(3), 0);
-            meta.setPixelsSizeT(new PositiveInteger(1), 0);
             xmp = new XMP();
-            FindMeta(xmp);
+            findMeta(xmp);
         } catch (DependencyException | ServiceException ex) {
             closeReaderAfterFailure(ex);
             throw new FormatException("Unable to create OME-XML metadata: " + ex.getMessage(), ex);
@@ -161,41 +143,43 @@ public class X2TIF implements AutoCloseable {
     }
 
     /** Best-effort descriptive metadata: missing or malformed values are simply left out. */
-    private void FindMeta(XMP xmp) {
+    private void findMeta(XMP xmp) {
         BigDecimal spacingX = mmPerPixel(ppx);
         BigDecimal spacingY = mmPerPixel(ppy);
         switch (reader) {
             case CellSensReader r -> {
-                OMEPyramidStore mx = (OMEPyramidStore) reader.getMetadataStore();
-                try {
-                    String objectiveID = mx.getObjectiveSettingsID(maximage);
-                    int instrument = -1;
-                    int objective = -1;
-                    int numberOfInstruments = mx.getInstrumentCount();
-                    for (int ii = 0; ii < numberOfInstruments; ii++) {
-                        int numObjectives = mx.getObjectiveCount(ii);
-                        for (int oi = 0; oi < numObjectives; oi++) {
-                            if (objectiveID.equals(mx.getObjectiveID(ii, oi))) {
-                                instrument = ii;
-                                objective = oi;
-                                break;
+                MetadataRetrieve m = (MetadataRetrieve) reader.getMetadataStore();
+                Time exposure = optional(() -> m.getPlaneExposureTime(maximage, 0));
+                Number ms = exposure == null ? null : exposure.value(UNITS.MILLISECOND);
+                if (ms != null) {
+                    xmp.setExposureTime(BigDecimal.valueOf(ms.doubleValue()));
+                }
+                String objectiveID = optional(() -> m.getObjectiveSettingsID(maximage));
+                Integer instruments = optional(m::getInstrumentCount);
+                instrumentLoop:
+                for (int ii = 0; objectiveID != null && instruments != null && ii < instruments; ii++) {
+                    int instrument = ii;
+                    Integer objectives = optional(() -> m.getObjectiveCount(instrument));
+                    for (int oi = 0; objectives != null && oi < objectives; oi++) {
+                        int objective = oi;
+                        if (objectiveID.equals(optional(() -> m.getObjectiveID(instrument, objective)))) {
+                            Double magnification = optional(() -> m.getObjectiveNominalMagnification(instrument, objective));
+                            if (magnification != null) {
+                                xmp.setMagnification(BigDecimal.valueOf(magnification));
                             }
+                            // CellSensReader stores each objective's camera at the same index
+                            String manu = optional(() -> m.getDetectorManufacturer(instrument, objective));
+                            if (manu != null) {
+                                xmp.setManufacturer(manu);
+                            }
+                            String model = optional(() -> m.getDetectorModel(instrument, objective));
+                            if (model != null) {
+                                xmp.setManufacturerDeviceName(model);
+                            }
+                            break instrumentLoop;
                         }
                     }
-                    BigDecimal t = BigDecimal.valueOf(mx.getPlaneExposureTime(maximage, 0).value(UNITS.MILLISECOND).doubleValue());
-                    xmp.setExposureTime(t);
-                    if (instrument >= 0 ) {
-                        xmp.setMagnification(BigDecimal.valueOf(mx.getObjectiveNominalMagnification(instrument, objective)));
-                        String manu = mx.getDetectorManufacturer(instrument, objective);
-                        if (manu!=null) {
-                            xmp.setManufacturer(manu);
-                        }
-                        String model = mx.getDetectorModel(instrument, objective);
-                        if (model!=null) {
-                            xmp.setManufacturerDeviceName(model);
-                        }
-                    }
-                } catch (NullPointerException ex) {}
+                }
             }
             case HatchSVSReader r -> {
                 Map<String,Object> list = r.getSeriesMetadata();
@@ -203,8 +187,13 @@ public class X2TIF implements AutoCloseable {
                 if (magnification != null) {
                     xmp.setMagnification(magnification);
                 }
-                xmp.setManufacturer((String) list.get("Image Description"));
-                xmp.setManufacturerDeviceName((String) list.get("ScanScope ID"));
+                // the reader keeps no vendor line; these keys only come from an Aperio description
+                if (list.containsKey("AppMag") || list.containsKey("MPP") || list.containsKey("ScanScope ID")) {
+                    xmp.setManufacturer(APERIO);
+                }
+                if (list.get("ScanScope ID") instanceof String model) {
+                    xmp.setManufacturerDeviceName(model);
+                }
                 BigDecimal exposureTime = number(list.get("Exposure Time"));
                 BigDecimal exposureScale = number(list.get("Exposure Scale"));
                 if (exposureTime != null && exposureScale != null) {
@@ -221,6 +210,18 @@ public class X2TIF implements AutoCloseable {
         if (spacingX != null && spacingY != null) {
             xmp.setSizePerPixelXinMM(spacingX);
             xmp.setSizePerPixelYinMM(spacingY);
+        }
+    }
+
+    /**
+     * A value from the OME metadata, or null if it is absent. MetadataRetrieve throws for absent
+     * intermediate elements (no ObjectiveSettings, no Plane) instead of returning null.
+     */
+    private static <T> T optional(Supplier<T> lookup) {
+        try {
+            return lookup.get();
+        } catch (NullPointerException | IndexOutOfBoundsException ex) {
+            return null;
         }
     }
 
@@ -244,7 +245,7 @@ public class X2TIF implements AutoCloseable {
         }
     }
 
-    private int MaxImage(RawTileSource reader) {
+    private int maxImage(RawTileSource reader) {
         int ii = 0;
         int maxseries = 0;
         int maxx = Integer.MIN_VALUE;
@@ -260,11 +261,6 @@ public class X2TIF implements AutoCloseable {
     }
 
     /** TIFF resolution in pixels per cm, or null when the source has no physical pixel size. */
-    private void SetPPS() {
-        px = pixelsPerCm(ppx);
-        py = pixelsPerCm(ppy);
-    }
-
     private static TiffRational pixelsPerCm(Length size) {
         Number um = size == null ? null : size.value(UNITS.MICROMETER);
         if (um == null || !(um.doubleValue() > 0) || Double.isInfinite(um.doubleValue())) {
@@ -387,9 +383,19 @@ public class X2TIF implements AutoCloseable {
     private IFD reducedIFD(int w, int h) {
         IFD ifd = tiledIFD(w, h);
         ifd.put(IFD.NEW_SUBFILE_TYPE, 1L);
+        if (px != null && py != null) {
+            // this level's pixels are larger by exactly the ratio of the image sizes
+            ifd.put(IFD.X_RESOLUTION, scaled(px, w, width));
+            ifd.put(IFD.Y_RESOLUTION, scaled(py, h, height));
+            ifd.put(IFD.RESOLUTION_UNIT, 3);
+        }
         ifd.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
         ifd.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {2, 2});
         return ifd;
+    }
+
+    private static TiffRational scaled(TiffRational resolution, int size, int baseSize) {
+        return new TiffRational(Math.round(resolution.doubleValue() * size / baseSize * 1000), 1000);
     }
 
     private IFD tiledIFD(int w, int h) {
@@ -411,7 +417,7 @@ public class X2TIF implements AutoCloseable {
      * Writes the pyramid to a sibling ".part" file and moves it over the destination only once
      * it is complete, so a failure never leaves a partial file and never destroys an existing one.
      */
-    public void Execute() throws FormatException, IOException {
+    public void execute() throws FormatException, IOException {
         Path target = Path.of(dest).toAbsolutePath();
         Files.createDirectories(target.getParent());
         Path part = target.resolveSibling(target.getFileName() + ".part");
@@ -439,7 +445,7 @@ public class X2TIF implements AutoCloseable {
             throw ex;
         }
         if (params.verbose) {
-            time.Cumulative();
+            LOGGER.log(Level.INFO, "Elapsed: {0} s", time.seconds());
         }
     }
 

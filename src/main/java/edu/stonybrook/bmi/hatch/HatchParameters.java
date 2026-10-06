@@ -19,31 +19,31 @@ public class HatchParameters {
         return help;
     }
     
-    @Parameter(names = "-src", description = "Source Folder or File", required = true)
+    @Parameter(names = "-src", description = "Source file (.vsi, .svs, .tif, .tiff) or folder", required = true)
     public File src;
 
-    @Parameter(names = "-dest", description = "Destination Folder or File", required = true)
+    @Parameter(names = "-dest", description = "Destination .tif/.tiff file, or folder", required = true)
     public File dest;  
     
-    @Parameter(names = "-fp", description = "# of file processors", converter = IntegerConverter.class, validateWith = PositiveInteger.class)
+    @Parameter(names = "-fp", description = "Number of files converted at once (batch mode)", converter = IntegerConverter.class, validateWith = PositiveInteger.class)
     public Integer fp = 1;
 
-    @Parameter(names = {"-filter", "-f"}, description = "String that each path must contain")
+    @Parameter(names = {"-filter", "-f"}, description = "Batch mode: only convert files whose path contains this text")
     public String filter = null;
     
-    @Parameter(names = {"-v","-verbose"})
+    @Parameter(names = {"-v","-verbose"}, description = "Log progress")
     public boolean verbose = false;
 
-    @Parameter(names = {"-o","-overwrite"})
+    @Parameter(names = {"-o","-overwrite"}, description = "Replace existing outputs")
     public boolean overwrite = false;
     
-    @Parameter(names = {"-r","-retry"})
+    @Parameter(names = {"-r","-retry"}, description = "Batch mode: replace existing outputs that fail validation, keep the rest")
     public boolean retry = false;
     
-    @Parameter(names = {"-validate"})
+    @Parameter(names = {"-validate"}, description = "Batch mode: validate every output, new or existing")
     public boolean validate = false;
 
-    @Parameter(names = {"-validateonly"})
+    @Parameter(names = {"-validateonly"}, description = "Batch mode: validate existing outputs, convert nothing")
     public boolean validateonly = false;
     
     @Parameter(names = {"-quality","-q"}, description = "JPEG quality of the reduced pyramid levels, 0.0 < q <= 1.0 "
@@ -53,7 +53,7 @@ public class HatchParameters {
     @Parameter(names = "-log", description = "Append error messages to this file")
     public File log = null;
 
-    @Parameter(names = {"-s","-series"}, description = "specify source series separated by commas")
+    @Parameter(names = {"-s","-series"}, description = "Single-file mode: convert these series (comma-separated) instead of the largest image")
     public List<String> series = Lists.newArrayList();    
 
     /** Checks the values JCommander cannot, before any file is touched. */

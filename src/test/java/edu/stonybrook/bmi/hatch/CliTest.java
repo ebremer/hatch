@@ -2,6 +2,7 @@ package edu.stonybrook.bmi.hatch;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -74,6 +75,41 @@ class CliTest {
         assertEquals(1, Hatch.run(new String[] {"-src", dir.resolve("nope.svs").toString(),
             "-dest", dir.resolve("out").toString(), "-log", log.toString()}));
         assertTrue(Files.readString(log).contains("nope.svs"), "the error is in the log file");
+    }
+
+    @Test
+    void tiffExtensionIsConvertedInBatchModeToTif(@TempDir Path dir) throws Exception {
+        Path in = dir.resolve("in");
+        slide(in, "a.tiff");
+        Path out = dir.resolve("out");
+
+        assertEquals(0, Hatch.run(new String[] {"-src", in.toString(), "-dest", out.toString()}));
+        assertTrue(Files.exists(out.resolve("a.tif")), "a.tiff -> a.tif");
+    }
+
+    @Test
+    void tiffDestinationIsAFileNotAFolder(@TempDir Path dir) throws Exception {
+        Path src = slide(dir, "a.tif");
+        Path dest = dir.resolve("out.tiff");
+
+        assertEquals(0, Hatch.run(new String[] {"-src", src.toString(), "-dest", dest.toString()}));
+        assertTrue(Files.isRegularFile(dest), "-dest out.tiff names the output file");
+    }
+
+    @Test
+    void retryKeepsValidOutputsAndRedoesBrokenOnes(@TempDir Path dir) throws Exception {
+        Path in = dir.resolve("in");
+        slide(in, "good.tif");
+        slide(in, "broken.tif");
+        Path out = dir.resolve("out");
+        assertEquals(0, Hatch.run(new String[] {"-src", in.toString(), "-dest", out.toString()}));
+        byte[] good = Files.readAllBytes(out.resolve("good.tif"));
+        Files.write(out.resolve("broken.tif"), new byte[] {'I', 'I', 43, 0, 8, 0, 0, 0});
+
+        assertEquals(0, Hatch.run(new String[] {"-src", in.toString(), "-dest", out.toString(), "-r"}));
+
+        assertArrayEquals(good, Files.readAllBytes(out.resolve("good.tif")), "a valid output is left alone");
+        Validate.check(out.resolve("broken.tif"));
     }
 
     @Test

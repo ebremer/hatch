@@ -61,7 +61,7 @@ class HatchConversionTest {
         p.dest = dest;
         p.quality = 0.8f;
         try (X2TIF x = new X2TIF(p, src.toString(), dest.toString(), null)) {
-            x.Execute();
+            x.execute();
         }
         assertTrue(dest.exists() && dest.length() > 0, "output pyramid was written");
         assertFalse(new File(dest.getPath() + ".part").exists(), "temporary .part file was moved into place");

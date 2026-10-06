@@ -25,7 +25,7 @@ class ValidateTest {
         p.src = src.toFile();
         p.dest = dest.toFile();
         try (X2TIF x = new X2TIF(p, src.toString(), dest.toString(), null)) {
-            x.Execute();
+            x.execute();
         }
         return dest;
     }

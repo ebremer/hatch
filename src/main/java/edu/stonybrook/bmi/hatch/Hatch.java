@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -34,14 +35,50 @@ import java.util.stream.Stream;
  * @author erich
  */
 public class Hatch {
-    public static String software = "hatch 4.3.0 by Wing-n-Beak";
-    private static final String[] ext = new String[] {".vsi", ".svs", ".tif"};
+    public static final String software = "hatch " + version() + " by Wing-n-Beak";
+    /** Extensions of the files hatch converts, lower case. */
+    static final Set<String> INPUT_EXTENSIONS = Set.of("vsi", "svs", "tif", "tiff");
     private static final Logger LOGGER = Logger.getLogger(Hatch.class.getName());
 
     public Hatch() {}
 
+    /** The project version, filtered into hatch.properties by the build. */
+    private static String version() {
+        try (InputStream in = Hatch.class.getResourceAsStream("/hatch.properties")) {
+            if (in != null) {
+                Properties p = new Properties();
+                p.load(in);
+                String v = p.getProperty("version");
+                if (v != null && !v.isBlank() && !v.startsWith("${")) {
+                    return v.trim();
+                }
+            }
+        } catch (IOException ex) {
+            // fall through: the version is only informational
+        }
+        return "(unknown version)";
+    }
+
+    /** The part of a file name after its last dot, in lower case, or "" if there is none. */
+    static String extension(String name) {
+        int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        int dot = name.lastIndexOf('.');
+        return dot <= slash ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
+    }
+
+    /** The name without its extension. */
+    static String baseName(String name) {
+        String ext = extension(name);
+        return ext.isEmpty() ? name : name.substring(0, name.length() - ext.length() - 1);
+    }
+
+    private static boolean isTiffName(String name) {
+        String ext = extension(name);
+        return ext.equals("tif") || ext.equals("tiff");
+    }
+
     /** Converts a folder tree; returns the number of files that failed or were refused. */
-    private static int Traverse(HatchParameters params) {
+    private static int traverse(HatchParameters params) {
         Path s;
         Path d;
         try {
@@ -66,14 +103,8 @@ public class Hatch {
                     }
                     return path.toString().contains(params.filter);
                 })
-                .filter(fff -> {
-                    for (String ext1 : ext) {
-                        if (fff.toFile().toString().toLowerCase().endsWith(ext1)) {
-                            return true;
-                        }
-                    }
-                    return false;
-                })
+                .filter(Files::isRegularFile)
+                .filter(fff -> INPUT_EXTENSIONS.contains(extension(fff.getFileName().toString())))
                 .toList();
         } catch (IOException | UncheckedIOException ex) {
             LOGGER.log(Level.SEVERE, "FILE PROCESSOR ERROR --> {0} {1} {2}", new Object[]{params.src.toString(), params.dest.toString(), ex.toString()});
@@ -85,8 +116,7 @@ public class Hatch {
         Map<String, List<Path>> claims = new HashMap<>();
         Set<String> sources = new HashSet<>();
         for (Path f : inputs) {
-            String frag = s.relativize(f).toString();
-            frag = frag.substring(0,frag.length()-4)+".tif";
+            String frag = baseName(s.relativize(f).toString()) + ".tif";
             Path t = d.resolve(frag);
             jobs.put(f, t);
             claims.computeIfAbsent(pathKey(t), k -> new ArrayList<>()).add(f);
@@ -146,8 +176,7 @@ public class Hatch {
     }
 
     private static String getFileNameBase(File file) {
-        String tail = file.getName();
-        return tail.substring(0,tail.length()-4);
+        return baseName(file.getName());
     }
 
     /**
@@ -169,7 +198,7 @@ public class Hatch {
                 }
             }
             try (X2TIF v2t = new X2TIF(params, src.toString(), dest.toString(), series == null ? null : Integer.valueOf(series))) {
-                v2t.Execute();
+                v2t.execute();
             }
             return true;
         } catch (Throwable ex) {
@@ -180,6 +209,8 @@ public class Hatch {
     }
 
     public static void main(String[] args) {
+        // a command-line tool: never start a GUI toolkit (the native image has no metadata for one)
+        System.setProperty("java.awt.headless", "true");
         System.exit(run(args));
     }
 
@@ -256,10 +287,10 @@ public class Hatch {
                 return 1;
             }
             params.series.clear();  // ignore series parameter
-            return Traverse(params) == 0 ? 0 : 1;
+            return traverse(params) == 0 ? 0 : 1;
         }
         // Source is a single file
-        if (!params.dest.exists()&&(!params.dest.toString().toLowerCase().endsWith(".tif"))) {
+        if (!params.dest.exists() && !isTiffName(params.dest.getName())) {
             params.dest.mkdirs();
         }
         boolean ok = true;

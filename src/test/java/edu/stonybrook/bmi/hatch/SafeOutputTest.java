@@ -143,7 +143,7 @@ class SafeOutputTest {
 
         assertThrows(java.io.IOException.class, () -> {
             try (X2TIF x = new X2TIF(p, src.toString(), dest.toString(), null)) {
-                x.Execute();
+                x.execute();
             }
         });
 

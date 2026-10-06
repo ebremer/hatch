@@ -15,12 +15,14 @@ import java.util.List;
 import java.util.Set;
 import javax.imageio.ImageIO;
 import loci.common.RandomAccessInputStream;
+import loci.common.RandomAccessOutputStream;
 import loci.formats.FormatException;
 import loci.formats.tiff.IFD;
 import loci.formats.tiff.IFDList;
 import loci.formats.tiff.OnDemandLongArray;
 import loci.formats.tiff.PhotoInterp;
 import loci.formats.tiff.TiffParser;
+import loci.formats.tiff.TiffSaver;
 import loci.formats.tiff.TiffRational;
 
 /**
@@ -156,9 +158,97 @@ final class TestFixtures {
 
     private static void writeImage(TiledTiffWriter writer, Image im)
             throws IOException, FormatException {
-        int nX = tileCount(im.width(), im.tileSize());
-        int nY = tileCount(im.height(), im.tileSize());
+        TiledTiffWriter.Image out = writer.addImage(tiledIFD(im));
+        for (int y = 0; y < tileCount(im.height(), im.tileSize()); y++) {
+            for (int x = 0; x < tileCount(im.width(), im.tileSize()); x++) {
+                if (!im.skipped().contains(y * tileCount(im.width(), im.tileSize()) + x)) {
+                    out.writeTile(x, y, tileData(im, x, y));
+                }
+            }
+        }
+    }
 
+    private static byte[] tileData(Image im, int x, int y) throws IOException {
+        BufferedImage tile = tileImage(x, y, im.tileSize(), im.samples());
+        return im.compression() == 7 ? jpeg(tile) : rgbSamples(tile);
+    }
+
+    /**
+     * Writes a classic (32-bit offset) TIFF whose first image is a small preview stored in
+     * JPEG-compressed strips, as some scanners write, and whose second is {@code tiled}.
+     */
+    static void writeClassicWithStripedPreview(File dest, Image tiled) throws IOException, FormatException {
+        try (RandomAccessOutputStream out = new RandomAccessOutputStream(dest.toString());
+             TiffSaver saver = new TiffSaver(out, dest.toString())) {
+            saver.setBigTiff(false);
+            saver.setLittleEndian(true);
+            saver.writeHeader();
+
+            int pw = 64;
+            int ph = 48;
+            int rowsPerStrip = 16;
+            IFD preview = new IFD();
+            preview.put(IFD.IMAGE_WIDTH, (long) pw);
+            preview.put(IFD.IMAGE_LENGTH, (long) ph);
+            preview.put(IFD.ROWS_PER_STRIP, (long) rowsPerStrip);
+            preview.put(IFD.COMPRESSION, 7);
+            preview.put(IFD.SAMPLES_PER_PIXEL, 3);
+            preview.put(IFD.BITS_PER_SAMPLE, new int[] {8, 8, 8});
+            preview.put(IFD.PLANAR_CONFIGURATION, 1);
+            preview.putIFDValue(IFD.PHOTOMETRIC_INTERPRETATION, PhotoInterp.Y_CB_CR.getCode());
+            preview.put(IFD.Y_CB_CR_SUB_SAMPLING, new int[] {2, 2});
+            int strips = ph / rowsPerStrip;
+            long[] stripOffsets = new long[strips];
+            long[] stripCounts = new long[strips];
+            for (int i = 0; i < strips; i++) {
+                byte[] strip = jpeg(new BufferedImage(pw, rowsPerStrip, BufferedImage.TYPE_3BYTE_BGR));
+                stripOffsets[i] = out.length();
+                stripCounts[i] = strip.length;
+                out.seek(stripOffsets[i]);
+                out.write(strip);
+            }
+            preview.put(IFD.STRIP_OFFSETS, stripOffsets);
+            preview.put(IFD.STRIP_BYTE_COUNTS, stripCounts);
+
+            IFD image = tiledIFD(tiled);
+            int across = tileCount(tiled.width(), tiled.tileSize());
+            int down = tileCount(tiled.height(), tiled.tileSize());
+            long[] tileOffsets = new long[across * down];
+            long[] tileCounts = new long[across * down];
+            for (int y = 0; y < down; y++) {
+                for (int x = 0; x < across; x++) {
+                    byte[] data = tileData(tiled, x, y);
+                    tileOffsets[y * across + x] = out.length();
+                    tileCounts[y * across + x] = data.length;
+                    out.seek(out.length());
+                    out.write(data);
+                }
+            }
+            image.put(IFD.TILE_OFFSETS, tileOffsets);
+            image.put(IFD.TILE_BYTE_COUNTS, tileCounts);
+
+            // IFDs last, the second one first so the first can point at it
+            long second = wordAligned(out);
+            saver.writeIFD(image, 0);
+            long first = wordAligned(out);
+            saver.writeIFD(preview, second);
+            out.seek(4);
+            out.writeInt((int) first);
+        }
+    }
+
+    /** Seeks to the end of the file, padded to an even offset, and returns that offset. */
+    private static long wordAligned(RandomAccessOutputStream out) throws IOException {
+        long end = out.length();
+        out.seek(end);
+        if (end % 2 != 0) {
+            out.writeByte(0);
+            end++;
+        }
+        return end;
+    }
+
+    private static IFD tiledIFD(Image im) {
         IFD ifd = new IFD();
         ifd.put(IFD.TILE_WIDTH, im.tileSize());
         ifd.put(IFD.TILE_LENGTH, im.tileSize());
@@ -189,19 +279,7 @@ final class TestFixtures {
             ifd.put(IFD.X_RESOLUTION, new TiffRational(pixelsPerCm, 1));
             ifd.put(IFD.Y_RESOLUTION, new TiffRational(pixelsPerCm, 1));
         }
-
-        TiledTiffWriter.Image out = writer.addImage(ifd);
-        for (int y = 0; y < nY; y++) {
-            for (int x = 0; x < nX; x++) {
-                int index = y * nX + x;
-                if (im.skipped().contains(index)) {
-                    continue;
-                }
-                BufferedImage tile = tileImage(x, y, im.tileSize(), im.samples());
-                byte[] data = im.compression() == 7 ? jpeg(tile) : rgbSamples(tile);
-                out.writeTile(x, y, data);
-            }
-        }
+        return ifd;
     }
 
     /** A full-size tile with distinct, non-uniform content so the JPEG has real structure. */

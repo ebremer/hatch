@@ -43,7 +43,7 @@ class InputHandlingTest {
 
     private static void convert(Path src, Path dest) throws Exception {
         try (X2TIF x = new X2TIF(params(src, dest), src.toString(), dest.toString(), null)) {
-            x.Execute();
+            x.execute();
         }
     }
 
@@ -165,6 +165,33 @@ class InputHandlingTest {
     }
 
     @Test
+    void classicTiffWithAStripedPreviewFirstConvertsItsTiledImage(@TempDir Path dir) throws Exception {
+        Path src = dir.resolve("classic.tif");
+        Path dest = dir.resolve("out.tif");
+        TestFixtures.writeClassicWithStripedPreview(src.toFile(), TestFixtures.Image.jpeg(640, 480, TILE));
+        byte[] head = Files.readAllBytes(src);
+        assertEquals(42, head[2], "the source is a classic TIFF, not a BigTIFF");
+
+        convert(src, dest);
+
+        IFD base = ifds(dest).get(0);
+        assertEquals(640, base.getImageWidth(), "the tiled image is converted, not the striped preview");
+        assertArrayEquals(tile(src, 1, 1, 2), tile(dest, 0, 1, 2), "tiles copied verbatim");
+    }
+
+    @Test
+    void aStripedImageIsRefused(@TempDir Path dir) throws Exception {
+        Path src = dir.resolve("classic.tif");
+        Path dest = dir.resolve("out.tif");
+        TestFixtures.writeClassicWithStripedPreview(src.toFile(), TestFixtures.Image.jpeg(640, 480, TILE));
+
+        FormatException ex = assertThrows(FormatException.class,
+            () -> new X2TIF(params(src, dest), src.toString(), dest.toString(), 0).close());
+
+        assertTrue(ex.getMessage().contains("strips"), ex.getMessage());
+    }
+
+    @Test
     void uncalibratedSourcesGetNoResolutionOrSpacing(@TempDir Path dir) throws Exception {
         Path src = dir.resolve("a.tif");
         Path dest = dir.resolve("out.tif");
@@ -194,5 +221,11 @@ class InputHandlingTest {
         TiffRational xres = (TiffRational) base.getIFDValue(IFD.X_RESOLUTION);
         assertEquals(40000, xres.doubleValue(), 1, "0.25 um/pixel is 40000 pixels/cm");
         assertEquals(3, base.getIFDIntValue(IFD.RESOLUTION_UNIT), "centimetres");
+        IFD level1 = ifds(dest).get(1);
+        assertEquals(256, level1.getImageWidth());
+        assertEquals(20000, ((TiffRational) level1.getIFDValue(IFD.X_RESOLUTION)).doubleValue(), 1,
+            "a reduced level is calibrated too: its pixels are twice as large");
+        assertEquals(20000, ((TiffRational) level1.getIFDValue(IFD.Y_RESOLUTION)).doubleValue(), 1);
+        assertEquals(3, level1.getIFDIntValue(IFD.RESOLUTION_UNIT));
     }
 }

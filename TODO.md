@@ -13,7 +13,7 @@ of the output). All other items come from reading the code; each cites `file:lin
 - **P3:** cleanup, build hygiene, docs, conventions.
 
 **Counts:** 6 × P0 · 19 × P1 · 16 × P2 · 43 × P3  
-**Done:** all P0, P1 and P2 items, plus the P3 items checked below (several became moot when the reader forks and the old pyramid/writer classes were deleted). Regression tests are in `SafeOutputTest`, `InputHandlingTest`, `CliTest`, `JPEGToolsTest`, `HatchConversionTest`, `PyramidTest`, `TiffTilesTest` and `ValidateTest`.
+**Done:** every item. Two P3 items were deliberately not changed (the XMP format, by decision on 2026-10-05) and two keep an open remainder that needs a real VSI sample; each says so. Regression tests are in `SafeOutputTest`, `InputHandlingTest`, `CliTest`, `JPEGToolsTest`, `HatchConversionTest`, `PyramidTest`, `TiffTilesTest` and `ValidateTest`.
 
 **Suggested order of work**
 1. **Safety PR (all P0).** Path guards (same file, nested dest, name collisions), write to a temp file and atomically move, an `X2TIF` factory that fails cleanly, and the depth == 1 IFD terminator.
@@ -301,44 +301,44 @@ of the output). All other items come from reading the code; each cites `file:lin
 ## P3: Cleanup, build, docs, conventions
 
 ### Dependencies and build
-- [ ] **Replace Apache Jena with a few lines of XML.** Jena is ~13 MB and 20+ jars (TDB1/2, SHACL, ShEx, RDF-patch) out of a 66 MB classpath, used only to write one small XMP packet (`XMP.java`). Dropping it also simplifies the native-image config.
-- [ ] Remove the unused `me.tongfei:progressbar` dependency, which also pulls in jline (`pom.xml:50`).
-- [ ] `XMP.java:8` relies on `commons-codec`, which only arrives transitively through Jena. Use `java.util.Base64`.
-- [ ] SLF4J versions are skewed: api 2.0.9 (via Bioformats), simple 2.0.12, jcl-over-slf4j 2.0.17. Pin `slf4j-api` to match.
-- [ ] Remove the `halcyon` repository (`pom.xml:100-101`). **[verified]** None of the 111 resolved jars come from it; it only adds a build dependency on an external host.
-- [ ] Version string is duplicated: `Hatch.java:24` hard-codes `4.3.0`. Read `Implementation-Version` from the manifest, or a filtered resource.
-- [ ] Add CI (GitHub Actions: `mvn -B verify` on JDK 21, plus a native-image smoke build).
+- [x] **Replace Apache Jena with a few lines of XML.** *Done:* `XMP` writes the RDF/XML itself, in Jena's layout; `XMPTest` checks it byte for byte against a packet hatch 4.3.0 wrote. (On Windows, Jena used CRLF line endings inside the RDF; the packet now always uses LF, as Jena did on Linux. XML parsers treat both the same.) The resolved classpath went from 111 jars to 66. Jena is ~13 MB and 20+ jars (TDB1/2, SHACL, ShEx, RDF-patch) out of a 66 MB classpath, used only to write one small XMP packet (`XMP.java`). Dropping it also simplifies the native-image config.
+- [x] *Done.* Remove the unused `me.tongfei:progressbar` dependency, which also pulls in jline (`pom.xml:50`).
+- [x] *Done.* `XMP.java:8` relies on `commons-codec`, which only arrives transitively through Jena. Use `java.util.Base64`.
+- [x] SLF4J versions are skewed: api 2.0.9 (via Bioformats), simple 2.0.12, jcl-over-slf4j 2.0.17. Pin `slf4j-api` to match. *Done:* `jcl-over-slf4j` left with Jena; `slf4j-api` and `slf4j-simple` are both 2.0.12 via `ver.slf4j`.
+- [x] *Done.* Remove the `halcyon` repository (`pom.xml:100-101`). **[verified]** None of the 111 resolved jars come from it; it only adds a build dependency on an external host.
+- [x] Version string is duplicated: `Hatch.java:24` hard-codes `4.3.0`. Read `Implementation-Version` from the manifest, or a filtered resource. *Done:* the build filters `${project.version}` into `hatch.properties`, which also works in tests and the native image.
+- [x] Add CI (GitHub Actions: `mvn -B verify` on JDK 21, plus a native-image smoke build). *Done:* `.github/workflows/build.yml`. Both jobs also convert OpenSlide's CMU-1-Small-Region.svs and check it with `ci/check_output.py`. Not run on GitHub yet; the check script and the native build were run locally.
 
 ### Native image
-- [ ] `-march=native` (`pom.xml:210`) makes the distributed binary crash (SIGILL) on older CPUs. Use `-march=compatibility` or `x86-64-v3` for release builds.
-- [ ] `<debug>true</debug>` and `<verbose>true</verbose>` in the release profile bloat the binary and the logs (`pom.xml:201, 203`).
-- [ ] `config/reachability-metadata.json` is stale. Since P2 it also lists TwelveMonkeys classes that are no longer on the classpath, and lacks the new classes. It was traced on Linux (X11/XRender entries) for Jena 5.2/Bioformats 7.x, and it lacks `SingleLineFormatter`, which `LogManager` loads reflectively. Regenerate it with the tracing agent while running the test suite, per OS.
-- [ ] `--add-reads edu.stonybrook.bmi.hatch=ALL-UNNAMED` (`pom.xml:179-180`) refers to a module that doesn't exist (there is no `module-info.java`). Remove it.
+- [x] *Done:* `-march=compatibility`. `-march=native` (`pom.xml:210`) makes the distributed binary crash (SIGILL) on older CPUs. Use `-march=compatibility` or `x86-64-v3` for release builds.
+- [x] *Done.* `<debug>true</debug>` and `<verbose>true</verbose>` in the release profile bloat the binary and the logs (`pom.xml:201, 203`).
+- [x] `config/reachability-metadata.json` is stale. *Done:* entries for removed libraries (Jena, TwelveMonkeys) dropped; the tracing agent was run in merge mode over SVS, VSI and TIFF conversions, batch `-validate`/`-validateonly`, `-log`, `-h` and error paths; `SingleLineFormatter` added by hand (the agent does not see the JDK's own reflective loads); joda-time zone data included for every zone, not just the tracing machine's. Merging keeps the Linux-traced entries. **[verified]** A native image built from it on Windows converts SVS, VSI and TIFF inputs, and the outputs pass `ci/check_output.py`. The first build failed with `NoSuchFieldError: java.awt.Insets.left` because a non-headless run starts the Windows GUI toolkit; `Hatch.main` now always sets `java.awt.headless=true`. The Linux build is left to CI (the profile's `--gc=G1` is Linux-only). Since P2 it also lists TwelveMonkeys classes that are no longer on the classpath, and lacks the new classes. It was traced on Linux (X11/XRender entries) for Jena 5.2/Bioformats 7.x, and it lacks `SingleLineFormatter`, which `LogManager` loads reflectively. Regenerate it with the tracing agent while running the test suite, per OS.
+- [x] *Done.* `--add-reads edu.stonybrook.bmi.hatch=ALL-UNNAMED` (`pom.xml:179-180`) refers to a module that doesn't exist (there is no `module-info.java`). Remove it.
 
 ### Metadata (XMP)
-- [ ] `PixelSpacing` is serialized as an RDF collection (`rdf:first`/`rdf:rest`) **[verified]**, which isn't valid XMP. Use `rdf:Seq`.
-- [ ] `http://ns.adobe.com/DICOM/` isn't a real Adobe namespace. Use a namespace you own. Drop the unused `xmp`, `xmpMM` and `xsd` prefixes.
-- [ ] SVS "Manufacturer" looks up `"Image Description"` (`X2TIF.java:243`), a key `SVSReader` never stores, so it is always null. The free-text vendor line (e.g. "Aperio Image Library v…") is stored under global `"Comment"`. Use that, or a fixed "Aperio".
-- [ ] `builder.build()` at `XMP.java:117` does nothing (`.output(os)` already wrote the packet). Use `" ".repeat(2424)` for the padding at `XMP.java:124`.
-- [ ] Levels ≥ 1 drop `X/YResolution` (`X2TIF.java:428-429`). Write per-level scaled values so viewers can calibrate any level.
+- [x] *Kept by decision (2026-10-05): readers of earlier output depend on the current form.* `PixelSpacing` is serialized as an RDF collection (`rdf:first`/`rdf:rest`) **[verified]**, which isn't valid XMP. Use `rdf:Seq`.
+- [x] *Kept by decision (2026-10-05), prefixes included, for the same reason.* `http://ns.adobe.com/DICOM/` isn't a real Adobe namespace. Use a namespace you own. Drop the unused `xmp`, `xmpMM` and `xsd` prefixes.
+- [x] *Done:* "Aperio" when the reader parsed Aperio's description keys (`AppMag`, `MPP`, `ScanScope ID`); the stock reader keeps no vendor line, and its global `Comment` is the last image's description (e.g. "macro 1280x431"). SVS "Manufacturer" looks up `"Image Description"` (`X2TIF.java:243`), a key `SVSReader` never stores, so it is always null. The free-text vendor line (e.g. "Aperio Image Library v…") is stored under global `"Comment"`. Use that, or a fixed "Aperio".
+- [x] *Done* (Jena is gone; the padding uses `repeat`). `builder.build()` at `XMP.java:117` does nothing (`.output(os)` already wrote the packet). Use `" ".repeat(2424)` for the padding at `XMP.java:124`.
+- [x] *Done:* each reduced level gets the base resolution scaled by its size ratio. Levels ≥ 1 drop `X/YResolution` (`X2TIF.java:428-429`). Write per-level scaled values so viewers can calibrate any level.
 
 ### Dead code and clarity
-- [ ] `X2TIF`: the OME-XML `meta` block (`X2TIF.java:154-169`) is built and never used, as are the `compression`/`method` switches and the unreachable `openCompressedBytes` branch (`X2TIF.java:388-417`), `effSize`, and ~25 lines of commented-out code.
+- [x] *Done* (the other parts went with the P1/P2 rewrites). `X2TIF`: the OME-XML `meta` block (`X2TIF.java:154-169`) is built and never used, as are the `compression`/`method` switches and the unreachable `openCompressedBytes` branch (`X2TIF.java:388-417`), `effSize`, and ~25 lines of commented-out code.
 - [x] *(moot: `Pyramid` was replaced by `PyramidBuilder`)* `Pyramid`: remove the unused `put(byte[],…,float)` and `put(BufferedImage,…,float)` overloads, the `xscale` field, and the public mutable `DownScale` (make it `static final`).
 - [x] *(moot)* `Pyramid.java:157-163`: the `Shrink` corner check can never fire, because `Merge` always produces 2T×2T tiles. It decodes the corner tile twice per level, and if it ever did fire it would leave `tilesX` and `width` inconsistent. Remove it.
 - [x] *(moot: `HatchSaver` was deleted)* `HatchSaver.java:55-56`: two no-op `seek` calls left over from `TiffSaver`.
 - [x] `HatchParameters` has no `toString()`, so `Hatch.java:106` logs an object hash. *Done:* that log line was removed.
-- [ ] `StopWatch` prints to `System.out` while everything else goes through the logger.
-- [ ] Empty `catch (NullPointerException ex) {}` at `X2TIF.java:228` hides real metadata bugs. Use explicit null checks.
-- [ ] Rename PascalCase methods (`Execute`, `Traverse`, `MaxImage`, `SetPPS`, `FindMeta`) to Java camelCase. (`Lump`, `Shrink`, `GetImageBytes` and `FindFirstEOI` are gone.)
-- [ ] Extension handling assumes 4-character extensions (`Hatch.java:63, 91`). Batch mode skips `.tiff` even though `TiffReader` accepts it, and `-dest out.tiff` is treated as a directory (`Hatch.java:126`).
+- [x] `StopWatch` prints to `System.out` while everything else goes through the logger. *Done:* it returns the elapsed seconds and X2TIF logs them.
+- [x] Empty `catch (NullPointerException ex) {}` at `X2TIF.java:228` hides real metadata bugs. Use explicit null checks. *Done:* each VSI value is looked up on its own, so an absent exposure time no longer drops the magnification and scanner too. `MetadataRetrieve` throws for absent intermediate elements, so the per-value lookup maps exactly those exceptions to "absent".
+- [x] Rename PascalCase methods (`Execute`, `Traverse`, `MaxImage`, `SetPPS`, `FindMeta`) to Java camelCase. *Done* (`SetPPS` was folded into the constructor). `X2TIF.Execute()` is now `execute()`. (`Lump`, `Shrink`, `GetImageBytes` and `FindFirstEOI` are gone.)
+- [x] *Done:* `.tiff` inputs are converted (to `.tif`), and `-dest x.tiff` names a file. Extension handling assumes 4-character extensions (`Hatch.java:63, 91`). Batch mode skips `.tiff` even though `TiffReader` accepts it, and `-dest out.tiff` is treated as a directory (`Hatch.java:126`).
 - [x] `HatchWriter` constructor leaks the `RandomAccessOutputStream` if `writeHeader()` throws (`HatchWriter.java:19-27`).
 
 ### Licensing
-- [ ] Restore the upstream GPL copyright/license header stripped from `CellSensReader`, the one remaining forked file, and add a `NOTICE` file listing what was modified. (The other forks were deleted in P2.)
+- [x] *Done:* header restored with a pointer to `NOTICE`, which lists the changes. Restore the upstream GPL copyright/license header stripped from `CellSensReader`, the one remaining forked file, and add a `NOTICE` file listing what was modified. (The other forks were deleted in P2.)
 
 ### Forked Bioformats readers
-- [ ] **`CellSensReader` was forked from an older upstream and is missing later fixes:**
+- [x] **`CellSensReader` was forked from an older upstream and is missing later fixes:**
   - the `frame_*.ets` filter
   - orphan-ETS matching
   - `TILE_ORIGIN`
@@ -348,6 +348,8 @@ of the output). All other items come from reading the code; each cites `file:lin
   - `getAvailableOptions`, so `cellsens.fail_on_missing_ets` can't be set
 
   Rebase it on 8.3.0, or better, subclass the upstream reader and add only `getRawBytes`.
+
+  *Done:* the first three came over in P1; the BGR swap, the exposure-time fallback, `PhysicalSizeZ` and `getAvailableOptions` are ported now. Subclassing is not possible (upstream's internals are private). What still differs from upstream is hatch's own behaviour (raw tile access, the tile-origin handling, errors for missing ETS data) plus two things that do not affect conversion: `openBytes` does not shift tiles by `TILE_ORIGIN`, and stale ETS files are not listed in `getUsedFiles`.
 - [x] *(moot: `CellSensReader` now extends upstream `FormatReader`)* **Regression vs upstream in the `FormatReader` fork.** `FormatReader.java:1282-1283` uses `core.get(i).resolutionCount` where upstream uses `core.get(index)`. It is wrong in non-flattened mode; latent today, but `CellSensReader` extends this class directly. Revert it.
 - [x] *(moot: fork deleted)* `MinimalTiffReader.java:533` dropped upstream's typed `getIFDValue(NEW_SUBFILE_TYPE, Number.class)`, so a malformed value now throws `ClassCastException`.
 - [x] *(moot: `HatchSVSReader` subclasses upstream)* **`SVSReader` is forked from a pre-8.x upstream.** The fork is missing:
@@ -378,13 +380,13 @@ of the output). All other items come from reading the code; each cites `file:lin
   - the offset check sits before the fakeBigTiff fix-up (`TiffParser.java:516-526`)
 
   Unused: `getIFDs()` (deprecated), `getFirstIFDEntry`, `getThumbnailIFDs`, `getNonThumbnailIFDs`, and ~450 lines of `getTile`/`getSamples`/`unpackBytes` reachable only from `openBytes`.
-- [ ] `CellSensReader` dead code: `openBytes`/`decodeTile`/`openThumbBytes`/`getIFDIndex`, the J2K/lossless/APNG/BMP branches, the unused `reader` + `finally`, `options` and `tileSize` in `getRaw` (`CellSensReader.java:1025-1049`), the always-false `tileMap.get(...) == null` check (`CellSensReader.java:952`), the unused `java.util.logging` imports, and discarded locals (`headerSize`, `version`, `colorspace`, `compressionQuality`, `tileZ`).
-  *Progress:* the 8 unused imports and the always-false `tileMap` null check are gone. `getRaw` no longer has the unused `reader`/`options`/`tileSize`.
+- [x] `CellSensReader` dead code: `openBytes`/`decodeTile`/`openThumbBytes`/`getIFDIndex`, the J2K/lossless/APNG/BMP branches, the unused `reader` + `finally`, `options` and `tileSize` in `getRaw` (`CellSensReader.java:1025-1049`), the always-false `tileMap.get(...) == null` check (`CellSensReader.java:952`), the unused `java.util.logging` imports, and discarded locals (`headerSize`, `version`, `colorspace`, `compressionQuality`, `tileZ`).
+  *Done:* the unused imports, the always-false check, the unused locals in `getRaw` and the discarded header fields are gone. `openBytes`/`decodeTile` and their codec branches stay: hatch does not call them, but they keep the class a working Bio-Formats reader, as upstream's.
 
 ### Tests and docs
-- [ ] Add regression tests for every P0/P1 item above: CLI path logic (same file, nested dest, collisions, `-o`/`-r`), depth == 1, missing calibration, non-JPEG input rejection, exit codes.
-- [ ] Extend the synthetic fixtures. They still never produce a striped first IFD, a classic (non-Big) TIFF or an uncalibrated VSI. *Progress:* JPEGTables, sparse tiles, RGB photometric and truncated files are now covered (`TiffTilesTest`, `InputHandlingTest`).
-- [ ] Add small real SVS and VSI fixtures, e.g. OpenSlide's freely licensed test slides (`CMU-1-Small-Region.svs`). Today only synthetic TIFFs exercise the readers, so the SVS and VSI paths are untested.
-- [ ] Validate outputs with an independent reader in CI (libtiff `tiffinfo`, or Python `tifffile` + `imagecodecs`), not only the project's own `TiffParser`.
+- [x] *Done* (across P0–P3; `-r` now has `CliTest.retryKeepsValidOutputsAndRedoesBrokenOnes`). Add regression tests for every P0/P1 item above: CLI path logic (same file, nested dest, collisions, `-o`/`-r`), depth == 1, missing calibration, non-JPEG input rejection, exit codes.
+- [ ] Extend the synthetic fixtures. *Done for TIFF:* JPEGTables, sparse tiles, RGB photometric, truncated files, and a classic TIFF whose first image is a striped preview (`TiffTilesTest`, `InputHandlingTest`). *Open:* an uncalibrated VSI, which cannot be synthesized without a VSI writer or a real sample.
+- [ ] *SVS done in CI, by decision (2026-10-05):* the workflow downloads CMU-1-Small-Region.svs rather than committing it. *Open:* no small, freely licensed VSI is known. Add small real SVS and VSI fixtures, e.g. OpenSlide's freely licensed test slides (`CMU-1-Small-Region.svs`). Today only synthetic TIFFs exercise the readers, so the SVS and VSI paths are untested.
+- [x] *Done:* `ci/check_output.py` (tifffile, libtiff through Pillow, OpenSlide), run in both CI jobs. **[verified]** It passes new outputs and flags an old 4:2:2 VSI output ("Improper JPEG sampling factors"). Validate outputs with an independent reader in CI (libtiff `tiffinfo`, or Python `tifffile` + `imagecodecs`), not only the project's own `TiffParser`.
 - [x] Fix the test fixture: it declares `YCbCrSubSampling [1,1]` for ImageIO's 4:2:0 JPEGs (`TestFixtures.java:65`).
-- [ ] README: document every flag (`-fp -f -o -r -validate -validateonly -q -s -v`), the JDK 21 requirement, memory sizing, supported input (8-bit RGB, JPEG-compressed, tiled), the output layout, and the ≤1024 px smallest-level rule.
+- [x] *Done*, and every flag now has a `-help` description. README: document every flag (`-fp -f -o -r -validate -validateonly -q -s -v`), the JDK 21 requirement, memory sizing, supported input (8-bit RGB, JPEG-compressed, tiled), the output layout, and the ≤1024 px smallest-level rule.

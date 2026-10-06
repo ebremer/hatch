@@ -1,3 +1,32 @@
+/*
+ * #%L
+ * OME Bio-Formats package for reading and converting biological file formats.
+ * %%
+ * Copyright (C) 2005 - 2017 Open Microscopy Environment:
+ *   - Board of Regents of the University of Wisconsin-Madison
+ *   - Glencoe Software, Inc.
+ *   - University of Dundee
+ * %%
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, either version 2 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program.  If not, see
+ * <http://www.gnu.org/licenses/gpl-2.0.html>.
+ * #L%
+ */
+
+/*
+ * Modified for hatch from loci.formats.in.CellSensReader (Bio-Formats); see NOTICE.
+ */
+
 package edu.stonybrook.bmi.hatch;
 
 import java.io.IOException;
@@ -17,6 +46,7 @@ import loci.formats.FormatReader;
 import static loci.formats.FormatHandler.checkSuffix;
 import loci.formats.FormatTools;
 import loci.formats.IFormatReader;
+import loci.formats.ImageTools;
 import loci.formats.MetadataTools;
 import loci.formats.codec.Codec;
 import loci.formats.codec.CodecOptions;
@@ -543,6 +573,10 @@ public class CellSensReader extends FormatReader implements RawTileSource {
         }
       }
 
+      Pyramid pyramid = pyramidMap.get(getCoreIndex());
+      if (pyramid != null && pyramid.bgr) {
+        ImageTools.bgrToRgb(buf, isInterleaved(), FormatTools.getBytesPerPixel(getPixelType()), getRGBChannelCount());
+      }
       return buf;
     }
     else {
@@ -602,6 +636,14 @@ public class CellSensReader extends FormatReader implements RawTileSource {
   }
 
   // -- Internal FormatReader API methods --
+
+  /* @see loci.formats.FormatReader#getAvailableOptions() */
+  @Override
+  protected ArrayList<String> getAvailableOptions() {
+    ArrayList<String> optionsList = super.getAvailableOptions();
+    optionsList.add(FAIL_ON_MISSING_KEY);
+    return optionsList;
+  }
 
   /* @see loci.formats.FormatReader#initFile(String) */
   @Override
@@ -900,6 +942,9 @@ public class CellSensReader extends FormatReader implements RawTileSource {
               if (c < pyramid.exposureTimes.size()) {
                 exp = pyramid.exposureTimes.get(c);
               }
+              else if (c < pyramid.otherExposureTimes.size()) {
+                exp = pyramid.otherExposureTimes.get(c);
+              }
               if (exp != null) {
                 store.setPlaneExposureTime(
                   FormatTools.createTime(exp / 1000000.0, UNITS.SECOND), ii, nextPlane);
@@ -920,6 +965,7 @@ public class CellSensReader extends FormatReader implements RawTileSource {
               }
             }
           }
+          store.setPixelsPhysicalSizeZ(FormatTools.getPhysicalSizeZ(pyramid.zIncrement), ii);
         }
       }
 
@@ -1246,8 +1292,8 @@ public class CellSensReader extends FormatReader implements RawTileSource {
       throw new FormatException("Unknown magic bytes: " + magic);
     }
 
-    int headerSize = etsFile.readInt();
-    int version = etsFile.readInt();
+    etsFile.skipBytes(4); // header size
+    etsFile.skipBytes(4); // version
     nDimensions.add(etsFile.readInt());
     long additionalHeaderOffset = etsFile.readLong();
     int additionalHeaderSize = etsFile.readInt();
@@ -1268,12 +1314,12 @@ public class CellSensReader extends FormatReader implements RawTileSource {
 
     int pixelType = etsFile.readInt();
     ms.sizeC = etsFile.readInt();
-    int colorspace = etsFile.readInt();
+    etsFile.skipBytes(4); // colour space
     compressionType.add(etsFile.readInt());
-    int compressionQuality = etsFile.readInt();
+    etsFile.skipBytes(4); // compression quality
     tileX.add(etsFile.readInt());
     tileY.add(etsFile.readInt());
-    int tileZ = etsFile.readInt();
+    etsFile.skipBytes(4); // tile depth
     etsFile.skipBytes(4 * 17); // pixel info hints
 
     byte[] color = new byte[ms.sizeC * FormatTools.getBytesPerPixel(convertPixelType(pixelType))];
@@ -1284,7 +1330,7 @@ public class CellSensReader extends FormatReader implements RawTileSource {
     backgroundColor.put(getCoreIndex(), color);
 
     etsFile.skipBytes(colorFieldSize - colorBytes); // remainder of background color field
-    etsFile.skipBytes(4); // component order
+    int componentOrder = etsFile.readInt();
     boolean usePyramid = etsFile.readInt() != 0;
 
     ms.rgb = ms.sizeC > 1;
@@ -1371,6 +1417,7 @@ public class CellSensReader extends FormatReader implements RawTileSource {
       pyramid = pyramids.get(s);
     }
     pyramid.hasEtsFile = true;
+    pyramid.bgr = componentOrder == 1 && compressionType.get(compressionType.size() - 1) == RAW;
     pyramidMap.put(core.size() - 1, pyramid);
     HashMap<String, Integer> dimOrder = pyramid.dimensionOrdering;
 
@@ -1912,6 +1959,7 @@ public class CellSensReader extends FormatReader implements RawTileSource {
               }
               else if (tag == EXPOSURE_TIME) {
                 pyramid.defaultExposureTime = Long.valueOf(value);
+                pyramid.otherExposureTimes.add(pyramid.defaultExposureTime);
               }
               else if (tag == CREATION_TIME && pyramid.acquisitionTime == null) {
                 pyramid.acquisitionTime = Long.valueOf(value);
@@ -2657,6 +2705,8 @@ public class CellSensReader extends FormatReader implements RawTileSource {
     public Integer tileOriginX;
     public Integer tileOriginY;
     public boolean hasEtsFile;
+    /** RAW tiles stored blue-green-red. */
+    public boolean bgr;
     public Double originX;
     public Double originY;
     public Double physicalSizeX;
@@ -2680,6 +2730,7 @@ public class CellSensReader extends FormatReader implements RawTileSource {
     public ArrayList<Double> channelWavelengths = new ArrayList<Double>();
     public ArrayList<Long> exposureTimes = new ArrayList<Long>();
     public Long defaultExposureTime;
+    public transient ArrayList<Long> otherExposureTimes = new ArrayList<Long>();
 
     public ArrayList<String> objectiveNames = new ArrayList<String>();
     public ArrayList<Integer> objectiveTypes = new ArrayList<Integer>();
